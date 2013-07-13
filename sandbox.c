@@ -1,31 +1,25 @@
 #include "sandbox.h"
+#include "trusted_thread.h"
+#include "syscall_table.h"
+#include "maps.h"
+#include "common.h"
+
 #include <unistd.h>
 #include <signal.h> 
 #include <sys/types.h>          
-#include "bpf-filter.h"
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
+#include <string.h> 
 #include <stdlib.h> 
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <arpa/inet.h> 
-#include <string.h> 
-#include "maps.h"
-#include "common.h"
-#include <pthread.h>
-#include "trusted_thread.h"
-#include "syscall_table.h"
-#include <sys/syscall.h>
+
 #define __USE_GNU 1
 #define _GNU_SOURCE 1
-#include "linux_syscall_support.h"
-#include "abstract_data/list.h"
 
 
 struct sandbox_info sandbox; 
-struct kernel_sigaction sa_segv_;
+struct sigaction sa_segv_;
 
 // Install singnal handler
 void setup_signal_handlers(); 
@@ -101,82 +95,48 @@ int start_sandbox() {
     return 0; 
 }
 
-/*void segvSignalHandler(int signo, siginfo_t *context,*/
-                       /*void *unused)*/
-  /*asm("segvSignalHandler") INTERNAL;*/
-
-
 void segv_sig_handler(int signo, siginfo_t *context, void *unused)
     asm("segv_sig_handler") INTERNAL;
 
-void copy_stack_frame (int); 
-asm (".global copy_stack_frame\n"
-     "copy_stack_frame:\n"
-     "lea  8(%rsp), %rax\n"       // retain stack frame upon returning
-//     "movq %rax , 0xA8(%rsp)\n"    // %rsp at time of segmentation fault
-     "mov  %rax, 0x98(%rsp)\n"    // %rax at time of segmentation fault
-     "addq $2, 0xB0(%rsp)\n "     // %rip at time of segmentation fault
-     "ret"
-);
-
-    
 void setup_signal_handlers() {
   // Set SIGCHLD to SIG_DFL so that waitpid() can work
-  struct kernel_sigaction sa;
+  struct sigaction sa;
+  sigset_t mask;
+  
+  memset(&mask, 0x00, sizeof(mask));
   memset(&sa, 0, sizeof(sa));
-  sa.sa_handler_ = SIG_DFL;
-  sys_sigaction(SIGCHLD, &sa, NULL);
+ 
+  sigemptyset(&mask);
+	sigaddset(&mask, SIGSYS);
+	sigaddset(&mask, SIGCHLD);
+	sigaddset(&mask, SIGSEGV);
 
+  sa.sa_handler = SIG_DFL;
+  sigaction(SIGCHLD, &sa, NULL);
+  
   // Set up SEGV handler for dealing with RDTSC instructions, system calls
   // that have been rewritten to use INT0, for sigprocmask() emulation, for
   // the creation of threads, and for user-provided SEGV handlers.
-  sa.sa_sigaction_ = segv_sig_handler;
-//  sa.sa_sigaction_ = copy_stack_frame;
+  sa.sa_sigaction = segv_sig_handler;
   sa.sa_flags = SA_SIGINFO ;
-  sys_sigaction(SIGSEGV, &sa, &sa_segv_);
+  sigaction(SIGSEGV, &sa, &sa_segv_);
 
   // Set up SYS handler for dealing with BPF trap. 
-  sa.sa_sigaction_ =  emulator;
+  sa.sa_sigaction =  emulator;
   sa.sa_flags      = SA_SIGINFO;
-  sys_sigaction(SIGSYS, &sa, NULL);
+  sigaction(SIGSYS, &sa, NULL);
   
-  // Unblock SIGSEGV and SIGCHLD
-  struct kernel_sigset_t mask;
-  memset(&mask, 0x00, sizeof(mask));
-  mask.sig[0] |= (1 << (SIGSEGV - 1)) | (1 << (SIGCHLD - 1)) | (1 << (SIGSYS - 1));
-  sys_sigprocmask(SIG_UNBLOCK, &mask, 0);
+	if (sigprocmask(SIG_UNBLOCK, &mask, NULL))
+      die("Sigprocmask"); 
+  
+  /*// Unblock SIGSEGV and SIGCHLD*/
+  /*mask.sig[0] |= (1 << (SIGSEGV - 1)) | (1 << (SIGCHLD - 1)) | (1 << (SIGSYS - 1));*/
+  /*sigprocmask(SIG_UNBLOCK, &mask, 0);*/
 }
 
-/*void setupSignalHandlers()*/
-/*{*/
 
-  /*struct sigaction sa;*/
-  /*sigset_t mask;*/
 
-  /*memset(&sa, 0, sizeof(sa)); */
-  /*memset(&mask, 0x00, sizeof(mask));*/
-
-  /*// Set SIGCHLD to SIG_DFL so that waitpid() can work*/
-/*//  sa.sa_handler_ = SIG_DFL;*/
-/*//  sigaction(SIGCHLD, &sa, NULL);*/
-  
-  /*// Set up SEGV handler for dealing with RDTSC instructions, system calls*/
-  /*// that have been rewritten to use INT0, for sigprocmask() emulation, for*/
-  /*// the creation of threads, and for user-provided SEGV handlers.*/
-  /*sa.sa_sigaction = segvSignalHandler;*/
-  /*sa.sa_flags      = SA_SIGINFO | SA_NODEFER;*/
-  /*sigaction(SIGSEGV, &sa, &sa_segv_);*/
-  
-  /*// Set up SYS handler for dealing with BPF trap. */
-  /*sa.sa_sigaction =  &emulator;*/
-  /*sa.sa_flags     = SA_SIGINFO | SA_NODEFER;*/
-  /*sigaction(SIGSYS, &sa, NULL);*/
-  /*// Unblock SIGSEGV and SIGCHLD*/
-/*//`  mask.sig[0] |=(1 << (SIGSYS- 1)) |  (1 << (SIGSEGV - 1)) | (1 << (SIGCHLD - 1));*/
-/*//  sigprocmask(SIG_UNBLOCK, &mask, 0); */
-/*}*/
-
-/*  if (!pid) {*/
+//if (!pid) {*/
     /*// Close all file handles except for sandboxFd, cloneFd, and stdio*/
     /*DIR *dir                   = opendir("/proc/self/fd");*/
     /*if (dir == 0) {*/
