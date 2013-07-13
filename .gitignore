@@ -15,3 +15,8 @@
 *.exe
 *.out
 *.app
+
+# Files
+calls*
+core 
+tags
