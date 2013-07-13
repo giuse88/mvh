@@ -6,10 +6,13 @@ PWD=`pwd`
 LIB=
 LINKER=gcc
 
-all : tracer.out 
+all : mvh 
 
-tracer.out : main.o error.o preload.so  
-	${LINKER} main.o error.o -o tracer.out 	
+mvh : main.o mvh.o error.o preload.so  
+	${LINKER} main.o mvh.o error.o -o mvh 	
+
+mvh.o: mvh.c 
+	${CC} mvh.c  -c ${DEBUG}  ${FLAGS} -o mvh.o
 
 main.o : main.c 
 	${CC} main.c  -c ${DEBUG}  ${FLAGS} -o main.o
@@ -56,12 +59,12 @@ preload.o: preload.c
 preload.so: tls.o  syscall_table.o fault.o mmalloc.o library.o maps.o sandbox.o preload.o error.o trusted_thread.o bpf-filter.o x86_decoder.o syscall_entrypoint.o 
 	${LINKER} ${LDFLAGS} -fPIC -shared error.o tls.o  fault.o syscall_table.o x86_decoder.o library.o bpf-filter.o maps.o mmalloc.o  preload.o syscall_entrypoint.o sandbox.o trusted_thread.o -o preload.so 
 
-run: tracer.out preload.so  
-	@ ./tracer.out --private /bin/ls   
-#	@ ./tracer.out toys/function_address.out  
+run: mvh preload.so  
+	@ ./mvh --private -s 127.0.0.1 -p 5555  /bin/ls -a 
+#	@ ./mvh toys/function_address.out  
 
-ls: tracer.out preload.so toys 
-	@ ./tracer.out /bin/ls   
+ls: mvh preload.so toys 
+	@ ./mvh /bin/ls   
 
 toys:  function_address.out 
 
@@ -73,14 +76,14 @@ read_maps.out : toys/read_maps.c
 	${LINKER} -g toys/read_maps.o mmalloc.o error.o library.o maps.o x86_decoder.o -o toys/read_maps.out
 
 thread: 
-	@ ./tracer.out ./toys/thread.out  
+	@ ./mvh ./toys/thread.out  
 
 clone: 
-	@ ./tracer.out ./toys/clone.out  
+	@ ./mvh ./toys/clone.out  
 
-gdb: tracer.out preload.so 
-	@ gdb ./tracer.out 
+gdb: mvh preload.so 
+	@ gdb ./mvh 
 strace: 
-	@ strace -ff ./tracer.out /bin/ls -o calls.txt 
+	@ strace -ff ./mvh /bin/ls -o calls.txt 
 clean: 
 	rm *.o *.out *.so 

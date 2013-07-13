@@ -18,5 +18,7 @@
 
 # Files
 calls*
-core 
+core
+mvh
 tags
+.*
