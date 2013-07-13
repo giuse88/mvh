@@ -4,6 +4,7 @@
 #include "maps.h"
 #include "common.h"
 
+#include <dirent.h> 
 #include <unistd.h>
 #include <signal.h> 
 #include <sys/types.h>          
@@ -14,15 +15,14 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define __USE_GNU 1
-#define _GNU_SOURCE 1
-
+#define __USE_GNU     1
+#define _GNU_SOURCE   1
 
 struct sandbox_info sandbox; 
 struct sigaction sa_segv_;
 
-// Install singnal handler
-void setup_signal_handlers(); 
+void segv_sig_handler(int signo, siginfo_t *context, void *unused)
+    asm("segv_sig_handler") INTERNAL;
 
 void install_sandbox_configuration(){
 
@@ -63,41 +63,6 @@ void install_sandbox_configuration(){
     sandbox.status = DISABLE; 
 }
 
-int start_sandbox() {
-    
-    install_sandbox_configuration(); 
-
-    DPRINT(DEBUG_INFO, "Start the sandbox enviroment of the %s process\n", 
-            sandbox.visibility==PUBLIC ? PUBLIC_STRING : PRIVATE_STRING ); 
-    
-    setup_signal_handlers(); 
-    DPRINT(DEBUG_INFO, "Signal handler installed\n"); 
-    
-    /* Initialize the sytem call table containing the 
-     * handler for each function */ 
-    initialize_syscall_table(); 
-    DPRINT(DEBUG_INFO, "System call table initialized \n"); 
-
-    /*TODO Rewrite VSDO and vsyscall */ 
-    
-    /*Get the file descriptor of the mapins */
-    sandbox.self_maps = open("/proc/self/maps", O_RDONLY, 0);
-    if (sandbox.self_maps < 0) 
-      die("Cannot access \"/proc/self/maps\"");
-
-    /* Create the trusted thread and enter seccomp mode */ 
-    if (create_trusted_thread() < 0 )
-        die("Create trusted thread");
-
-    sandbox.status = ENABLE;
-    DPRINT(DEBUG_INFO, "Ends Sandbox\n");
-
-    return 0; 
-}
-
-void segv_sig_handler(int signo, siginfo_t *context, void *unused)
-    asm("segv_sig_handler") INTERNAL;
-
 void setup_signal_handlers() {
   // Set SIGCHLD to SIG_DFL so that waitpid() can work
   struct sigaction sa;
@@ -134,36 +99,68 @@ void setup_signal_handlers() {
   /*sigprocmask(SIG_UNBLOCK, &mask, 0);*/
 }
 
+void close_file_handlers() {
 
+    // Close all file handles except for sandboxFd, cloneFd, and stdio
+    DIR *dir                   = opendir("/proc/self/fd");
+    if (dir == 0) {
+      // If we don't know the list of our open file handles, just try closing
+      // all valid ones0l
+      // _SC_OPEN_MAX contains the maximum number of file descriptors that 
+      //  this process can open
+      for (int fd = sysconf(_SC_OPEN_MAX); --fd > 2; ) 
+          close(fd);
+    } else {
+      // If available, if is much more efficient to just close the file
+      // handles that show up in /proc/self/fd/
+      struct dirent de, *res;
+      while (!readdir_r(dir, &de, &res) && res) {
+        if (res->d_name[0] < '0')
+          continue;
+        int fd                 = atoi(res->d_name);
+        if (fd > 2 &&
+           fd != dirfd(dir)) {
+          close(fd);
+        }
+      }
+      closedir(dir);
+    }
 
-//if (!pid) {*/
-    /*// Close all file handles except for sandboxFd, cloneFd, and stdio*/
-    /*DIR *dir                   = opendir("/proc/self/fd");*/
-    /*if (dir == 0) {*/
-      /*// If we don't know the list of our open file handles, just try closing*/
-      /*// all valid ones0l*/
-      /*// _SC_OPEN_MAX contains the maximum number of file descriptors that */
-      /*//  this process can open*/
+}
 
-      /*for (int fd = sysconf(_SC_OPEN_MAX); --fd > 2; ) {*/
-        /*if (fd != sandboxFd && fd != cloneFd) {*/
-          /*close(fd);*/
-        /*}*/
-      /*}*/
-    /*} else {*/
-      /*// If available, if is much more efficient to just close the file*/
-      /*// handles that show up in /proc/self/fd/*/
-      /*struct dirent de, *res;*/
-      /*while (!readdir_r(dir, &de, &res) && res) {*/
-        /*if (res->d_name[0] < '0')*/
-          /*continue;*/
-        /*int fd                 = atoi(res->d_name);*/
-        /*if (fd > 2 &&*/
-            /*fd != sandboxFd && fd != cloneFd && fd != dirfd(dir)) {*/
-          /*close(fd);*/
-        /*}*/
-      /*}*/
-      /*closedir(dir);*/
-    /*}*/
+int start_sandbox() {
+    
+    install_sandbox_configuration(); 
 
+    DPRINT(DEBUG_INFO, "Start the sandbox enviroment of the %s process\n", 
+            sandbox.visibility==PUBLIC ? PUBLIC_STRING : PRIVATE_STRING ); 
+    
+    setup_signal_handlers(); 
+    DPRINT(DEBUG_INFO, "Signal handler installed\n"); 
+    
+    /* Initialize the sytem call table containing the 
+     * handler for each function */ 
+    initialize_syscall_table(); 
+    DPRINT(DEBUG_INFO, "System call table initialized \n"); 
 
+    /*TODO Rewrite VSDO and vsyscall */ 
+
+    // close all file handlers open so far
+    close_file_handlers(); 
+
+    // This may be moved to another position, only the trusted 
+    // process uses it. 
+    /*Get the file descriptor of the mapins */
+    sandbox.self_maps = open("/proc/self/maps", O_RDONLY, 0);
+    if (sandbox.self_maps < 0) 
+      die("Cannot access \"/proc/self/maps\"");
+
+    /* Create the trusted thread and enter seccomp mode */ 
+    if (create_trusted_thread() < 0 )
+        die("Create trusted thread");
+
+    sandbox.status = ENABLE;
+    DPRINT(DEBUG_INFO, "Ends Sandbox\n");
+
+    return 0; 
+}
