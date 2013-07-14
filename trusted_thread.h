@@ -4,6 +4,7 @@
 #include "bpf-filter.h"
 #include <stdbool.h>
 #include "abstract_data/list.h" 
+#include "sandbox.h" 
 
 typedef unsigned long register_size;
 
@@ -52,9 +53,14 @@ struct thread_info
   // associated with this thread 
   pid_t monitored_thread_id;     
   // the type of the thread (trusted, untrusted) 
-  thread_type type; 
-  int cookie; 
+  thread_type type;
+  // I need to know if the thread is public or provate 
+  process_visibility visibility; 
+  // cookie whihc identifies the pair trusted and untrusted 
+  int cookie;
 }__attribute__((packed)); 
+
+#define SIZE_THREAD_INFO sizeof(struct thread_info)
 
 struct ThreadArgs 
 {

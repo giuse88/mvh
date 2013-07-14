@@ -1,12 +1,15 @@
 CC=gcc 
 FLAGS=-g  -std=gnu99 -O0  
-DEBUG=  #-DDEBUG 
+DEBUG=  -DDEBUG -DCOLOR 
 LDFLAGS=-ldl -g -lpthread  
 PWD=`pwd`
 LIB=
 LINKER=gcc
 
-all : mvh 
+all : mvh build_server 
+
+build_server: main_mvh_server.c mvh_server.c error.c
+	${CC} ${DEBUG}  ${FLAGS} -lpthread main_mvh_server.c mvh_server.c error.c -o mvh_server 
 
 mvh : main.o mvh.o error.o preload.so  
 	${LINKER} main.o mvh.o error.o -o mvh 	
@@ -75,11 +78,19 @@ read_maps.out : toys/read_maps.c
 	${CC} toys/read_maps.c -c ${FLAGS} ${DEBUG} -o toys/read_maps.o 
 	${LINKER} -g toys/read_maps.o mmalloc.o error.o library.o maps.o x86_decoder.o -o toys/read_maps.out
 
-thread: 
-	@ ./mvh ./toys/thread.out  
+thread:  
+	@ ./mvh --public ./toys/thread.out  
 
 clone: 
-	@ ./mvh ./toys/clone.out  
+	@ ./mvh --public ./toys/clone.out  
+
+server: build_server 
+	@ ./mvh_server   
+
+public:  
+	@ ./mvh --public /bin/ls   
+private:  
+	@ ./mvh --private /bin/ls   
 
 gdb: mvh preload.so 
 	@ gdb ./mvh 

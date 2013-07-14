@@ -10,6 +10,7 @@
 // Default configuration options
 #define DEFAULT_IP              "127.0.0.1" 
 #define DEFAULT_PORT            5555
+#define SERVER_TIMEOUT          3 * 60 * 1000
 #define PUBLIC_STRING           "public" 
 #define PRIVATE_STRING          "private" 
 

@@ -3,7 +3,7 @@
 #include "syscall_table.h"
 #include "maps.h"
 #include "common.h"
-
+#include "tls.h" 
 #include <dirent.h> 
 #include <unistd.h>
 #include <signal.h> 
@@ -23,6 +23,7 @@ struct sigaction sa_segv_;
 
 void segv_sig_handler(int signo, siginfo_t *context, void *unused)
     asm("segv_sig_handler") INTERNAL;
+
 
 void install_sandbox_configuration(){
 
@@ -62,7 +63,6 @@ void install_sandbox_configuration(){
     sandbox.process = getpid(); 
     sandbox.status = DISABLE; 
 }
-
 void setup_signal_handlers() {
   // Set SIGCHLD to SIG_DFL so that waitpid() can work
   struct sigaction sa;
@@ -74,7 +74,7 @@ void setup_signal_handlers() {
   sigemptyset(&mask);
 	sigaddset(&mask, SIGSYS);
 	sigaddset(&mask, SIGCHLD);
-	sigaddset(&mask, SIGSEGV);
+  sigaddset(&mask, SIGSEGV);
 
   sa.sa_handler = SIG_DFL;
   sigaction(SIGCHLD, &sa, NULL);
@@ -93,13 +93,25 @@ void setup_signal_handlers() {
   
 	if (sigprocmask(SIG_UNBLOCK, &mask, NULL))
       die("Sigprocmask"); 
-  
-  /*// Unblock SIGSEGV and SIGCHLD*/
-  /*mask.sig[0] |= (1 << (SIGSEGV - 1)) | (1 << (SIGCHLD - 1)) | (1 << (SIGSYS - 1));*/
-  /*sigprocmask(SIG_UNBLOCK, &mask, 0);*/
+}
+void wait_for_remote_process() {
+    int fd = get_local_fd(); 
+    char buf[COMMAND]; 
+    int res =-1; 
+
+    memset(buf, 0, COMMAND);
+
+    DPRINT(DEBUG_INFO, "Wait for the remote process, fd %d\n", fd);
+
+    INTR_RES(read(fd, buf,COMMAND), res); 
+
+    if (strncmp(buf, START_COMMAND, sizeof(START_COMMAND)) || res < COMMAND) 
+          die("Wait for the remote process");       
+
+    DPRINT(DEBUG_INFO, "Process syncronised with the remote process\n"); 
 }
 
-void close_file_handlers() {
+void close_file_descriptors() {
 
     // Close all file handles except for sandboxFd, cloneFd, and stdio
     DIR *dir                   = opendir("/proc/self/fd");
@@ -145,8 +157,8 @@ int start_sandbox() {
 
     /*TODO Rewrite VSDO and vsyscall */ 
 
-    // close all file handlers open so far
-    close_file_handlers(); 
+    // close all file descriptors open so far
+    close_file_descriptors(); 
 
     // This may be moved to another position, only the trusted 
     // process uses it. 
@@ -160,6 +172,7 @@ int start_sandbox() {
         die("Create trusted thread");
 
     sandbox.status = ENABLE;
+    wait_for_remote_process(); 
     DPRINT(DEBUG_INFO, "Ends Sandbox\n");
 
     return 0; 

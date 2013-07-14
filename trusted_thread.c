@@ -114,7 +114,6 @@ void   print_syscall_info(const syscall_request * req);
               ); 
 }
 
-
 static int handle_new_thread( void * stack) {
  DPRINT(DEBUG_INFO, "Handle new thread\n"); 
  create_trusted_thread(); 
@@ -273,15 +272,14 @@ int create_trusted_thread()
    
   // syncronisation point 
   DPRINT(DEBUG_INFO, "Waiting for the trusted thread to be ready\n");  
+  
   sem_wait(&binary_semaphore); 
-
-  // the semaphore is used every time a thread is created
   sem_destroy(&binary_semaphore); 
 
   DPRINT(DEBUG_INFO, "Untrusted thread allow to run\n");  
-  
-  if(install_filter(fd_remote_process) < 0 )
-      die("Install fileter error"); 
+ 
+/*  if(install_filter(fd_remote_process) < 0 )*/
+      /*die("Install fileter error"); */
 
   DPRINT(DEBUG_INFO, "The trusted thread has been created\n");
 
@@ -376,7 +374,8 @@ int connect_remote_process( struct connection_info * info_connection,
     info.sid=getsid(0);
     info.monitored_thread_id = (type == TRUSTED_THREAD ) ? monitored : 0; 
     info.cookie= (type == TRUSTED_THREAD ) ? monitored : info.tid; 
-    
+    info.visibility = sandbox.visibility; 
+
     // send info 
     INTR_RES(write(sockfd, (char *)&info, sizeof(info)), bytes_transfered); 
 

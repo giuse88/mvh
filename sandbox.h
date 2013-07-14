@@ -4,16 +4,18 @@
 #include <sys/types.h>          
 #include "debug.h"
 
-#define MAX_IP_LENGTH 256 
+#define MAX_IP_LENGTH          256 
+#define ACKNOWLEDGE             32 
+#define ACCEPTED            "ACCEPTED"
+#define START_COMMAND         "START" 
+#define COMMAND      32 
 
-#define ACKNOWLEDGE 32 
-#define ACCEPTED "ACCEPTED"
 
 
 typedef enum {ENABLE, DISABLE} sandbox_status; 
 typedef enum {PRIVATE, PUBLIC, UNKNOWN} process_visibility; 
 
-// connection info
+//connection info
 struct connection_info
 {
   char ip[MAX_IP_LENGTH]; 
