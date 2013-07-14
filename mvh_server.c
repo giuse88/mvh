@@ -1,3 +1,6 @@
+#define     __USE_GNU     1
+#define     _GNU_SOURCE   1
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -6,17 +9,24 @@
 #include <string.h>
 #include <time.h> 
 #include <pthread.h>
+#include <assert.h> 
+#include <stdbool.h> 
+#include <fcntl.h> 
+#include <poll.h> 
+
 #include "sandbox.h" 
 #include "common.h" 
 #include "trusted_thread.h"
 #include "syscall_x64.h"
-#include <assert.h> 
-#include <stdbool.h> 
-
-#define     __USE_GNU     1
-#define     _GNU_SOURCE   1
 
 #define     MAX_LISTENER_SOCKET 10 
+#define     NFDS                 4 
+
+
+#define PUBLIC_TRUSTED     0
+#define PUBLIC_UNTRUSTED   1 
+#define PRIVATE_TRUSTED    2 
+#define PRIVATE_UNTRUSTED  3
 
 struct thread_pair {
     int cookie; 
@@ -33,16 +43,17 @@ struct thread_group {
     struct list_head list; /* kernel's list structure */
 }; 
 #define SIZE_THREAD_GROUP sizeof(struct thread_group)
+
 /* PRINT INFO FUNCTIONS */ 
-void print_thread_info(const struct thread_info * info){
-    DPRINT(DEBUG_INFO, "%s process %d, %s thread %d, Cookie %d Monitored thread %d, Group %d, Session %d\n",  
+void print_thread_info(const struct thread_info * info, int fd){
+    DPRINT(DEBUG_INFO, "%s process %d, %s thread %d, Cookie %d Monitored thread %d, Group %d, Session %d\n Connected over %d\n",  
                          info->visibility == PUBLIC ? "Public" : "Private", info->pid,
                          info->type == TRUSTED_THREAD ? "Trusted" : "Untrusted",info->tid, info->cookie,
-                         info->monitored_thread_id, info->gid, info->sid);  
+                         info->monitored_thread_id, info->gid, info->sid, fd);  
 }
 void print_thread_pair(const struct thread_pair * pair){
-    print_thread_info(&pair->trusted); 
-    print_thread_info(&pair->untrusted); 
+    print_thread_info(&pair->trusted, pair->trusted_fd); 
+    print_thread_info(&pair->untrusted, pair->untrusted_fd); 
 }
 void print_thread_group(const struct thread_group * group){
     print_thread_pair(&group->public); 
@@ -76,13 +87,99 @@ void  __print_syscall_info(const syscall_request * req, const syscall_result *re
     /*}*/
 
 struct thread_group * syncronisation_group_;
+struct thread_group connection;
 
-struct thread_group connection; void  * handle_thread_pair(void * arg) {
+static int make_socket_non_blocking (int sfd){
+  int flags, s;
+
+  flags = fcntl (sfd, F_GETFL, 0);
+  if (flags == -1)
+    die("fcntl");
+
+  flags |= O_NONBLOCK;
+  s = fcntl (sfd, F_SETFL, flags);
+  if (s == -1)
+      die("fcntl");
+
+  return 0;
+}
+static void start_process( int fd) {
+    int res =-1;
+    char buf[COMMAND] = {0}; 
+    
+    memset(buf, 0, COMMAND); 
+    strncpy(buf, START_COMMAND, sizeof(START_COMMAND)); 
    
+    INTR_RES(write(fd, buf, COMMAND), res); 
+    if (res < COMMAND) 
+          die("start process");
+    else 
+          printf("sENT %d\n", res); 
+}
 
+void  * handle_thread_pair(void * arg) {
+
+    int fds[NFDS]={0}; 
+    struct pollfd pollfds[NFDS]; 
+    int res =-1; 
+
+    fds[PUBLIC_TRUSTED]     = connection.public.trusted_fd; 
+    fds[PUBLIC_UNTRUSTED]   = connection.public.untrusted_fd; 
+    fds[PRIVATE_TRUSTED]    = connection.private.trusted_fd; 
+    fds[PRIVATE_UNTRUSTED] = connection.private.untrusted_fd; 
+    
     print_thread_group(&connection); 
 
+     /*
+      * I must make the socket non-blocking 
+      * because I don't know from which unstrused 
+      * thread I wiil receive the first request
+      */ 
+
+    memset(pollfds, 0, sizeof(pollfds)); 
+    for (int i=0; i < NFDS; i++){
+        make_socket_non_blocking(fds[i]); 
+        printf("%d : %d\n",i, fds[i]); 
+        pollfds[i].fd = fds[i]; 
+        pollfds[i].events =  POLLIN; /* there is data to read */ 
+    }
+
+    printf("Public untrusted %d  private untrusted %d\n", fds[PUBLIC_UNTRUSTED],fds[PRIVATE_UNTRUSTED]);  
+    printf("Public trusted   %d  private trusted   %d\n", fds[PUBLIC_TRUSTED], fds[PRIVATE_TRUSTED]);  
+    
+    start_process(fds[PUBLIC_UNTRUSTED]); 
+    start_process(fds[PRIVATE_UNTRUSTED]); 
+
+    /*do {*/
+    /*int bytes_transfered=-1; */
     /*syscall_request request;*/
+    /*syscall_result   result; */
+
+    /*memset(&request, 0, sizeof(request)); */
+    /*memset(&result, 0, sizeof(result)); */
+    
+    /*res=poll(pollfds,NFDS,SERVER_TIMEOUT); */
+
+    /*if (res == 0)*/
+        /*irreversible_error("Connection Time out"); */
+    /*else if ( res < 0 )*/
+        /*die("pool"); */
+
+    /*DPRINT(DEBUG_INFO, "The are %d fd ready\n", res); */
+/*//    assert( res <= 2 ); */
+
+    /*if (pollfds[PUBLIC_UNTRUSTED].revents)*/
+      /*INTR_RES(read(fds[PUBLIC_UNTRUSTED], (char *)&request, sizeof(request)), bytes_transfered); */
+
+    /*if (pollfds[PRIVATE_UNTRUSTED].revents)*/
+      /*INTR_RES(read(fds[PRIVATE_UNTRUSTED], (char *)&request, sizeof(request)), bytes_transfered); */
+
+      /*__print_syscall_info(&request, &result);  */
+
+    
+    /*}*/
+    /*while(ALWAYS); */
+
     /*syscall_result  result; */
     /*int current = (int)arg; */
 
@@ -98,16 +195,10 @@ struct thread_group connection; void  * handle_thread_pair(void * arg) {
     /*printf(" --- Index %d Trusted thread connect on %d \n", current, connections_[current].trusted_fd ); */
     /*printf(" --- Index %d Un-trusted thread connect on %d \n", current, connections_[current].untrusted_fd ); */
     
-    /*while (1) {*/
+    /*while (ALWAYS) {*/
 
     /*// receive request */
-    /*INTR_RES(read(connections_[current].untrusted_fd, (char *)&request, sizeof(request)), bytes_transfered); */
-
-    /*if (bytes_transfered < sizeof(request)){*/
-        /*printf("Error reading from %d, bytes read %d\n", connections_[current].untrusted_fd, bytes_transfered); */
-        /*die("Read (Untrusted thread request)"); */
-    /*} */
-    
+   
     /*DPRINT(DEBUG_INFO, " %d == START request %d for system call < %s >\n", current, request.cookie, syscall_names[request.syscall_identifier]); */
     /*DPRINT(DEBUG_INFO, "%d Received request %d from %d for system call %s over %d\n",current, request.cookie, connections_[current].untrusted.tid,*/
             /*syscall_names[request.syscall_identifier], */
@@ -200,11 +291,11 @@ void update_thread_group(struct  thread_group *group,
 
     if(info->type == UNTRUSTED_THREAD) { 
           memcpy(&(pair->trusted) ,info, SIZE_THREAD_INFO);
-          pair->trusted_fd = sockfd;
+          pair->untrusted_fd = sockfd;
           pair->cookie = info->cookie; 
        } else  if(info->type == TRUSTED_THREAD) { 
           memcpy(&(pair->untrusted) ,info, SIZE_THREAD_INFO);
-          pair->untrusted_fd = sockfd;
+          pair->trusted_fd = sockfd;
           assert(pair->cookie == info->cookie); 
       } else {
           printf("%d",info->type);
@@ -226,7 +317,7 @@ void handle_connection(int sockfd){
     if (bytes_transfered < sizeof(info))
         die("Read (thread info)"); 
 
-    print_thread_info(&info); 
+    print_thread_info(&info, sockfd); 
 
     strncpy(buf, ACCEPTED, sizeof(ACCEPTED));
     // send acknowledge 
