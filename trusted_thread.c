@@ -278,8 +278,8 @@ int create_trusted_thread()
 
   DPRINT(DEBUG_INFO, "Untrusted thread allow to run\n");  
  
-/*  if(install_filter(fd_remote_process) < 0 )*/
-      /*die("Install fileter error"); */
+  if(install_filter(fd_remote_process) < 0 )
+      die("Install fileter error"); 
 
   DPRINT(DEBUG_INFO, "The trusted thread has been created\n");
 
@@ -301,9 +301,9 @@ void fill_syscall_request(  const ucontext_t * context,
 
    request->cookie = get_local_tid();  
 
-    if (syscall_table &&
-       syscall_table[request->syscall_identifier].handler != NO_HANDLER)
-       syscall_table[request->syscall_identifier].handler(request , context); 
+/*   if (syscall_table &&*/
+       /*syscall_table[request->syscall_identifier].handler != NO_HANDLER)*/
+       /*syscall_table[request->syscall_identifier].handler(request , context); */
 }
 
 int send_syscall_request(const syscall_request * req) 

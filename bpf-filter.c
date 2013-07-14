@@ -46,8 +46,6 @@ int  find_function_boundaries( char * instr, char **start, char ** end )
 
    return SUCCESS;
 }
-
-
 void emulator(int nr, siginfo_t  *info, void *void_context)
 {
   ucontext_t *ctx = (ucontext_t *)(void_context);
@@ -94,8 +92,6 @@ void emulator(int nr, siginfo_t  *info, void *void_context)
 
   return;
 }
-
-
  int install_filter(int fd)
 {
   struct sock_filter f[] = 

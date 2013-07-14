@@ -15,7 +15,6 @@
 typedef enum {ENABLE, DISABLE} sandbox_status; 
 typedef enum {PRIVATE, PUBLIC, UNKNOWN} process_visibility; 
 
-//connection info
 struct connection_info
 {
   char ip[MAX_IP_LENGTH]; 

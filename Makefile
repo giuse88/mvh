@@ -1,6 +1,6 @@
 CC=gcc 
 FLAGS=-g  -std=gnu99 -O0  
-DEBUG=  -DDEBUG -DCOLOR 
+DEBUG=  -DCOLOR -DDEBUG 
 LDFLAGS=-ldl -g -lpthread  
 PWD=`pwd`
 LIB=
@@ -97,4 +97,4 @@ gdb: mvh preload.so
 strace: 
 	@ strace -ff ./mvh /bin/ls -o calls.txt 
 clean: 
-	rm *.o *.out *.so 
+	rm *.o *.so mvh mvh_server  

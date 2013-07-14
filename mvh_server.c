@@ -18,6 +18,7 @@
 #include "common.h" 
 #include "trusted_thread.h"
 #include "syscall_x64.h"
+#include "color.h" 
 
 #define     MAX_LISTENER_SOCKET 10 
 #define     NFDS                 4 
@@ -59,7 +60,7 @@ void print_thread_group(const struct thread_group * group){
     print_thread_pair(&group->public); 
     print_thread_pair(&group->private);
 }
-void  __print_syscall_info(const syscall_request * req, const syscall_result *res) {
+void  __print_syscall_info(const syscall_request * req, const syscall_result *res, process_visibility vis) {
     static bool first = true; 
     if(first){
       printf("%-20s%-20s%-20s%-20s%-20s%-20s%-20s%-20s%-20s\n", "Cookie", "System Call", 
@@ -67,9 +68,12 @@ void  __print_syscall_info(const syscall_request * req, const syscall_result *re
                                               "Arg3", "Arg4", "Arg5", "Result");  
       first=false;
     }
-     printf("%-20d%-20s%-20lx%-20lx%-20lx%-20lx%-20lx%-20lx%-20lx\n",req->cookie,
+    
+    char * color = ( vis == PUBLIC ) ? ANSI_COLOR_GREEN : ANSI_COLOR_RED; 
+
+    printf( "%s%-20d%-20s%-20lx%-20lx%-20lx%-20lx%-20lx%-20lx%-20lx%s\n", color, req->cookie,
              syscall_names[req->syscall_identifier], 
-             req->arg0,  req->arg1,req->arg2, req->arg3,  req->arg4, req->arg5, res->result); 
+             req->arg0,  req->arg1,req->arg2, req->arg3,  req->arg4, req->arg5, res->result,ANSI_COLOR_RESET); 
 }
 
 
@@ -103,7 +107,7 @@ static int make_socket_non_blocking (int sfd){
 
   return 0;
 }
-static void start_process( int fd) {
+static void start_application( int fd) {
     int res =-1;
     char buf[COMMAND] = {0}; 
     
@@ -113,8 +117,43 @@ static void start_process( int fd) {
     INTR_RES(write(fd, buf, COMMAND), res); 
     if (res < COMMAND) 
           die("start process");
-    else 
-          printf("sENT %d\n", res); 
+}
+
+int receive_syscall_request( int fd,  syscall_request * req) { 
+    int res = -1; 
+    memset(req, 0, sizeof(syscall_request)); 
+    INTR_RES(read(fd, req, sizeof(syscall_request)), res);
+    if ( res != sizeof(syscall_request))
+        die("Failed receiving system call request"); 
+   
+    return res; 
+}
+
+int receive_syscall_result( int fd,  syscall_result * result) { 
+    int res = -1; 
+    memset(result, 0, sizeof(syscall_result)); 
+    INTR_RES(read(fd, result, sizeof(syscall_result)), res);
+    if ( res != sizeof(syscall_result))
+        die("Failed receiving system call result"); 
+    return res; 
+}
+
+// TODO refactoring this fucntion name overlaps with the function define in trusted_thread.c 
+//
+int __send_syscall_request( int fd, const syscall_request * req) { 
+    int res = -1; 
+    INTR_RES(write(fd, req, sizeof(syscall_request)), res);
+    if ( res != sizeof(syscall_request))
+        die("Failed sending system call request"); 
+    return res; 
+}
+
+int __send_syscall_result( int fd, const syscall_result * result) { 
+    int res = -1; 
+    INTR_RES(write(fd, result, sizeof(syscall_result)), res);
+    if ( res != sizeof(syscall_result))
+        die("Failed sending system call result"); 
+    return res; 
 }
 
 void  * handle_thread_pair(void * arg) {
@@ -126,9 +165,9 @@ void  * handle_thread_pair(void * arg) {
     fds[PUBLIC_TRUSTED]     = connection.public.trusted_fd; 
     fds[PUBLIC_UNTRUSTED]   = connection.public.untrusted_fd; 
     fds[PRIVATE_TRUSTED]    = connection.private.trusted_fd; 
-    fds[PRIVATE_UNTRUSTED] = connection.private.untrusted_fd; 
+    fds[PRIVATE_UNTRUSTED]  = connection.private.untrusted_fd; 
     
-    print_thread_group(&connection); 
+//    print_thread_group(&connection); 
 
      /*
       * I must make the socket non-blocking 
@@ -147,51 +186,102 @@ void  * handle_thread_pair(void * arg) {
     printf("Public untrusted %d  private untrusted %d\n", fds[PUBLIC_UNTRUSTED],fds[PRIVATE_UNTRUSTED]);  
     printf("Public trusted   %d  private trusted   %d\n", fds[PUBLIC_TRUSTED], fds[PRIVATE_TRUSTED]);  
     
-    start_process(fds[PUBLIC_UNTRUSTED]); 
-    start_process(fds[PRIVATE_UNTRUSTED]); 
+    start_application(fds[PUBLIC_UNTRUSTED]); 
+    start_application(fds[PRIVATE_UNTRUSTED]); 
 
-    /*do {*/
-    /*int bytes_transfered=-1; */
-    /*syscall_request request;*/
-    /*syscall_result   result; */
-
-    /*memset(&request, 0, sizeof(request)); */
-    /*memset(&result, 0, sizeof(result)); */
-    
-    /*res=poll(pollfds,NFDS,SERVER_TIMEOUT); */
-
-    /*if (res == 0)*/
-        /*irreversible_error("Connection Time out"); */
-    /*else if ( res < 0 )*/
-        /*die("pool"); */
-
-    /*DPRINT(DEBUG_INFO, "The are %d fd ready\n", res); */
-/*//    assert( res <= 2 ); */
-
-    /*if (pollfds[PUBLIC_UNTRUSTED].revents)*/
-      /*INTR_RES(read(fds[PUBLIC_UNTRUSTED], (char *)&request, sizeof(request)), bytes_transfered); */
-
-    /*if (pollfds[PRIVATE_UNTRUSTED].revents)*/
-      /*INTR_RES(read(fds[PRIVATE_UNTRUSTED], (char *)&request, sizeof(request)), bytes_transfered); */
-
-      /*__print_syscall_info(&request, &result);  */
-
-    
-    /*}*/
-    /*while(ALWAYS); */
-
-    /*syscall_result  result; */
-    /*int current = (int)arg; */
-
-    /*int bytes_transfered=-1; */
-
+    bool pub_req=false, pub_res=false; 
+    bool priv_req=false, priv_res=false; 
+ 
+    do {
+ 
+    int bytes_received=-1; 
+    syscall_request private_request, public_request;
+    syscall_result  private_result , public_result; 
+   
     /* 
      * = Read from the untrusted sock to collect a request
      * = Send the request to the trusted therad 
      * = Read the result from the trusted thread 
      * = Send back the result to the untrusted trusted
      */ 
-    /*puts(" --- New thread created");*/
+    
+    res=poll(pollfds,NFDS,SERVER_TIMEOUT); 
+
+    if (res == 0)
+        irreversible_error("Connection Time out"); 
+    else if ( res < 0 )
+        die("pool"); 
+    // there must be at maximun two fd ready  
+    assert( res <= 2 ); 
+
+    if (pollfds[PUBLIC_UNTRUSTED].revents) {
+        pub_req = true; 
+        bytes_received = receive_syscall_request(fds[PUBLIC_UNTRUSTED], &public_request); 
+        DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n", public_request.cookie, connection.public.untrusted.tid, 
+                                                                                      syscall_names[public_request.syscall_identifier], fds[PUBLIC_UNTRUSTED]);
+    }
+
+    if (pollfds[PRIVATE_UNTRUSTED].revents) {
+        priv_req = true; 
+        bytes_received = receive_syscall_request(fds[PRIVATE_UNTRUSTED], &private_request); 
+        DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n", private_request.cookie, connection.private.untrusted.tid, 
+                                                                                      syscall_names[private_request.syscall_identifier], fds[PRIVATE_UNTRUSTED]);
+    }
+
+    if (pollfds[PUBLIC_TRUSTED].revents) {
+        pub_res=true; 
+        bytes_received = receive_syscall_result(fds[PUBLIC_TRUSTED], &public_result); 
+        DPRINT(DEBUG_INFO, "Received result for %d from %d over %d\n", public_result.cookie, connection.public.trusted.tid,fds[PUBLIC_TRUSTED]);
+      }
+
+    if (pollfds[PRIVATE_TRUSTED].revents) {
+        priv_res = true; 
+        bytes_received = receive_syscall_result(fds[PRIVATE_TRUSTED], &private_result); 
+        DPRINT(DEBUG_INFO, "Received result for %d from %d over %d\n", private_result.cookie, connection.private.trusted.tid,fds[PRIVATE_TRUSTED]);
+    }
+
+ 
+    //TODO I should also verify the cookie 
+    //TODO verify the system call 
+   
+    // forward request 
+    if(pub_req && priv_req) {
+        if(__send_syscall_request(fds[PUBLIC_TRUSTED], &public_request) < 0)
+            die("Failed send request public trusted thread");
+        if(__send_syscall_request(fds[PRIVATE_TRUSTED], &private_request) < 0)
+            die("Failed send request public trusted thread");
+        
+        DPRINT(DEBUG_INFO, "Sent system call request "); 
+        pub_req = false; 
+        priv_req = false; 
+    }
+    
+    if( pub_res && priv_res) {
+
+        __print_syscall_info(&public_request, &public_result, PUBLIC); 
+        __print_syscall_info(&private_request, &private_result, PRIVATE); 
+        if(__send_syscall_result(fds[PUBLIC_UNTRUSTED], &public_result) < 0)
+            die("Failed send request public trusted thread");
+        if(__send_syscall_result(fds[PRIVATE_UNTRUSTED], &private_result) < 0)
+            die("Failed send request public trusted thread");
+       
+        pub_res = false;
+        priv_res = false; 
+        memset(&private_result, 0, sizeof(syscall_result)); 
+        memset(&public_result, 0, sizeof(syscall_result)); 
+        memset(&private_request, 0, sizeof(syscall_request));   
+        memset(&public_request, 0, sizeof(syscall_request));  
+
+    }
+   
+    } while(ALWAYS); 
+
+    /*syscall_result  result; */
+    /*int current = (int)arg; */
+
+    /*int bytes_transfered=-1; */
+
+       /*puts(" --- New thread created");*/
     /*printf(" --- Index %d Trusted thread connect on %d \n", current, connections_[current].trusted_fd ); */
     /*printf(" --- Index %d Un-trusted thread connect on %d \n", current, connections_[current].untrusted_fd ); */
     
@@ -199,9 +289,7 @@ void  * handle_thread_pair(void * arg) {
 
     /*// receive request */
    
-    /*DPRINT(DEBUG_INFO, " %d == START request %d for system call < %s >\n", current, request.cookie, syscall_names[request.syscall_identifier]); */
-    /*DPRINT(DEBUG_INFO, "%d Received request %d from %d for system call %s over %d\n",current, request.cookie, connections_[current].untrusted.tid,*/
-            /*syscall_names[request.syscall_identifier], */
+           /*syscall_names[request.syscall_identifier], */
             /*connections_[current].untrusted_fd); */
 
     /*if (request.has_indirect_arguments) */
@@ -290,11 +378,11 @@ void update_thread_group(struct  thread_group *group,
                                 &(group->public) : &(group->private); 
 
     if(info->type == UNTRUSTED_THREAD) { 
-          memcpy(&(pair->trusted) ,info, SIZE_THREAD_INFO);
+          memcpy(&(pair->untrusted) ,info, SIZE_THREAD_INFO);
           pair->untrusted_fd = sockfd;
           pair->cookie = info->cookie; 
        } else  if(info->type == TRUSTED_THREAD) { 
-          memcpy(&(pair->untrusted) ,info, SIZE_THREAD_INFO);
+          memcpy(&(pair->trusted) ,info, SIZE_THREAD_INFO);
           pair->trusted_fd = sockfd;
           assert(pair->cookie == info->cookie); 
       } else {
@@ -303,7 +391,8 @@ void update_thread_group(struct  thread_group *group,
     }
 }
 
-void handle_connection(int sockfd){
+void handle_connection(int sockfd)
+{
 
     struct thread_info info;
     int bytes_transfered = -1; 
