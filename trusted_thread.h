@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include "abstract_data/list.h" 
 #include "sandbox.h" 
-
+#include "handler.h"
 
 typedef enum {UNTRUSTED_THREAD, TRUSTED_THREAD} thread_type;
 struct thread_info
@@ -46,6 +46,6 @@ struct untrusted_thread_list {
     struct list_head list;
 }; 
 
+extern long do_syscall( syscall_request * );
 extern int  create_trusted_thread(); 
-
 #endif /* end of include guard: TRUSTED_THREAD_H */

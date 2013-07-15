@@ -49,7 +49,14 @@ void initialize_syscall_table()
 
   if (syscall_table_ == MAP_FAILED) 
      die("Failed to allocate system call table");
- 
+
+   // default 
+  for (struct syscall_handler * sys_han = syscall_table_; 
+        sys_han < syscall_table_ + MAX_SYSTEM_CALL; sys_han++) {
+    sys_han->handler_trusted = DEFAULT_TRUSTED;
+    sys_han->handler_untrusted = DEFAULT_UNTRUSTED;
+  }
+
    /*fill out the system call table*/
   for (const struct policy *policy = default_policy;
        policy-default_policy < (int)(size/sizeof(struct policy));
@@ -57,6 +64,7 @@ void initialize_syscall_table()
            syscall_table_[policy->syscallNum].handler_untrusted  = policy->handler_untrusted;
            syscall_table_[policy->syscallNum].handler_trusted    = policy->handler_trusted;
   }
+
   protect_syscall_table();
   DPRINT(DEBUG_INFO, "Loaded system call table\n");  
 

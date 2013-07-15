@@ -1,6 +1,6 @@
 CC=gcc 
 FLAGS=-g  -std=gnu99 -O0  
-DEBUG=  -DCOLOR -DDEBUG 
+DEBUG=  #-DCOLOR -DDEBUG 
 LDFLAGS=-ldl -g -lpthread  
 PWD=`pwd`
 LIB=

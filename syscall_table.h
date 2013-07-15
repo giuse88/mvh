@@ -9,7 +9,7 @@ struct syscall_handler {
   // handler executes when the application make a request for a system call
   u64_t     (*handler_untrusted)(const ucontext_t *); 
   //handler executed by the trusted thread when it receives a request 
-  void     (*handler_trusted)( const syscall_request *); 
+  void     (*handler_trusted)( const syscall_request *, int fd); 
 };
 
 /* INTERFACE */

@@ -9,16 +9,14 @@
 struct policy {
     unsigned syscallNum;
     u64_t     (*handler_untrusted)(const ucontext_t *  );  
-    void     (*handler_trusted)(const syscall_request *);  
+    void     (*handler_trusted)(const syscall_request *, int fd);  
 }; 
 
-
-void      (*default_trusted_) (const syscall_request *) = trusted_default; 
+void      (*default_trusted_) (const syscall_request *, int fd) = trusted_default; 
 u64_t     (*default_untrusted_)(const ucontext_t *) = untrusted_default; 
 
 #define DEFAULT_UNTRUSTED  default_untrusted_
 #define DEFAULT_TRUSTED    default_trusted_
-
 
  /*PUBLIC THREAD*/  
 const struct policy public_policy[] = {
@@ -28,10 +26,10 @@ const struct policy public_policy[] = {
     //{ __NR_exit,        DEFAULT, NO_HANDLER},
     //{ __NR_exit_group,  DEFAULT, NO_HANDLER},
     //{ __NR_clone ,      sys_clone, NO_HANDLER}, 
-    //[>File system system calls 
-  { __NR_open ,      DEFAULT_UNTRUSTED,      DEFAULT_TRUSTED},
-  { __NR_close,      DEFAULT_UNTRUSTED,      DEFAULT_TRUSTED}, 
-    /*{ __NR_write,       sys_write },*/
+/*    //[>File system system calls */
+  //{ __NR_open ,      DEFAULT_UNTRUSTED,      DEFAULT_TRUSTED},
+  //{ __NR_close,      DEFAULT_UNTRUSTED,      DEFAULT_TRUSTED}, 
+/*    [>/*{ __NR_write,       sys_write },*/
     /*{ __NR_writev,      sys_writev}, */
     /*{ __NR_pwrite,      sys_pwrite}, */
     /*{ __NR_pread,       sys_pread }, */
@@ -53,8 +51,8 @@ const struct policy private_policy[] = {
 /*--------------------------------------------------------------------------------
   |SYSCALL NUM   | HANDLER REQUEST UNTRUSTED | RESULT UNTRUSTED | TRUSTED THREAD |         
   --------------------------------------------------------------------------------  */ 
- { __NR_open ,     DEFAULT_UNTRUSTED,    DEFAULT_TRUSTED},
- { __NR_close,     DEFAULT_UNTRUSTED,    DEFAULT_TRUSTED}, 
+/* { __NR_open ,     DEFAULT_UNTRUSTED,    DEFAULT_TRUSTED},*/
+ /*{ __NR_close,     DEFAULT_UNTRUSTED,    DEFAULT_TRUSTED}, */
 };
  
 #endif /* end of include guard: POLICY_H */

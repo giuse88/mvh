@@ -3,6 +3,8 @@
 #include "tls.h"
 #include "sandbox.h"
 #include "bpf-filter.h"
+#include "trusted_thread.h"
+
 #include <sys/mman.h> 
 #include <sys/syscall.h> 
 #include <sys/socket.h>
@@ -14,11 +16,91 @@
 #include <arpa/inet.h> 
 #include <sys/syscall.h>
 
+int send_syscall_request(const syscall_request * req) {
+   int sent; 
+   int fd = get_local_fd(); 
+
+   INTR_RES(write( fd,(char *)req, sizeof(syscall_request)), sent); 
+
+    if (req->has_indirect_arguments) 
+      for (int i=0; i< req->indirect_arguments; i++)
+          INTR_RES(write(fd,
+                      (char *)req->args[i].content,req->args[i].size), sent);     
+    return sent; 
+}
+int get_syscall_result (syscall_result * res){
+    int received;
+    int fd = get_local_fd(); 
+    pid_t tid = get_local_tid(); 
+
+    INTR_RES(read(fd, (char *)res, sizeof(syscall_result)), received); 
+
+    if (res->cookie != tid)
+        die("cookie verification failed (result)"); 
+
+    return received; 
+}
+
+/**********************************************************************
+ *                          DEFAULT                                   *
+ **********************************************************************/
+u64_t untrusted_default(const ucontext_t *ctx ){
+   
+    int syscallNum = -1; 
+    syscall_result result; 
+    syscall_request request; 
+  
+    syscallNum = ctx->uc_mcontext.gregs[REG_SYSCALL];
+    DPRINT(DEBUG_INFO, "Start DEFAULT handler for < %s > \n", syscall_names[syscallNum]);
+
+    memset((void*)&request, 0, sizeof(syscall_request)); 
+    memset((void*)&result,  0, sizeof(syscall_result)); 
+ 
+   request.syscall_identifier = ctx->uc_mcontext.gregs[REG_SYSCALL]; 
+   request.arg0 = ctx->uc_mcontext.gregs[REG_ARG0]; 
+   request.arg1 = ctx->uc_mcontext.gregs[REG_ARG1]; 
+   request.arg2 = ctx->uc_mcontext.gregs[REG_ARG2]; 
+   request.arg3 = ctx->uc_mcontext.gregs[REG_ARG3]; 
+   request.arg4 = ctx->uc_mcontext.gregs[REG_ARG4];
+   request.arg5 = ctx->uc_mcontext.gregs[REG_ARG5]; 
+   request.cookie = get_local_tid();  
+
+   if(send_syscall_request(&request) < 0)
+       die("Error sending system call request"); 
+
+   if(get_syscall_result(&result) < 0 )
+       die("Failede get_syscall_result"); 
+
+   DPRINT(DEBUG_INFO, " End DEFAULT handler for < %s > \n", syscall_names[syscallNum]);
+   return (u64_t)result.result; 
+}
+void trusted_default (const syscall_request *request, int fd){
+
+  syscall_result result; 
+  int nwrite=-1; 
+
+  memset(&result, 0, sizeof(result)); 
+
+  DPRINT(DEBUG_INFO, "Start DEFAULT trusted thread for system call < %s > \n",
+            syscall_names[request->syscall_identifier]);
+    
+  result.result = do_syscall(request);
+  result.cookie = request->cookie; 
+
+  INTR_RES(write(fd,(char *)&result,sizeof(result)), nwrite); 
+
+  if (nwrite < (int)sizeof(result)) 
+        die("Failed write system call arguments"); 
+
+  DPRINT(DEBUG_INFO, "End DEFAULT trusted thread for system call < %s > \n",
+            syscall_names[request->syscall_identifier]);
+ 
+}
 
 
-
-
-/*[> HANDLERS <] */
+//open 
+void open_untrusted(syscall_request *req, const ucontext_t * uc ){
+  DPRINT(DEBUG_INFO, "Open request\n");
 /*void sys_open  (syscall_request * req, const ucontext_t * context )*/
 /*{*/
    /*[>open ( char * "path", mode ) <] */
@@ -30,31 +112,35 @@
    /*req->args[0].argument_number = 0;*/
 /*}*/
 
-/*void sys_write (syscall_request * req , const ucontext_t * context )*/
-/*{*/
-   /*req->has_indirect_arguments=true; */
-   /*req->indirect_arguments=1;*/
-   /*req->args[0].content= (char *)req->arg1; */
-   /*req->args[0].size = req->arg2 ; */
-   /*req->args[0].argument_number = 1;*/
-/*}*/
 
-/*void sys_read (syscall_request * req, const ucontext_t * context ){*/
-   /*[>open ( char * "path", mode ) <] */
- /*//  DPRINT(DEBUG_INFO, " --READ-- System call handler\n");*/
-   /*req->has_indirect_arguments=true; */
-   /*req->indirect_arguments=1;*/
-   /*req->args[0].content= (char *)req->arg1; */
-   /*req->args[0].size = req->arg2 ; */
-   /*req->args[0].argument_number = 1;*/
-/*}*/
+} 
+/*
+void sys_write (syscall_request * req , const ucontext_t * context )
+{
+   req->has_indirect_arguments=true; 
+   req->indirect_arguments=1;
+   req->args[0].content= (char *)req->arg1; 
+   req->args[0].size = req->arg2 ; 
+   req->args[0].argument_number = 1;
+}
 
-/*void sys_clone ( syscall_request *req , const ucontext_t * context) {*/
+void sys_read (syscall_request * req, const ucontext_t * context ){
+   [>open ( char * "path", mode ) <] 
+ //  DPRINT(DEBUG_INFO, " --READ-- System call handler\n");
+   req->has_indirect_arguments=true; 
+   req->indirect_arguments=1;
+   req->args[0].content= (char *)req->arg1; 
+   req->args[0].size = req->arg2 ; 
+   req->args[0].argument_number = 1;
+}
+*/ 
+
+/* CLONE */ 
+u64_t clone_untrusted ( const ucontext_t * context) {
 
    /*DPRINT(DEBUG_INFO, " --CLONE-- System call handler\n");*/ /*char *stack = (char *)req->arg1; */
    /*char *child_stack=stack; */
    /*void *dummy;*/
-   
    /*asm volatile( "mov %%rsp, %%rcx\n"*/
                  /*"mov %3, %%rsp\n"*/
                  /*"int $0\n"*/
@@ -69,77 +155,47 @@
    /*memcpy(uc, context, sizeof(struct ucontext)); */
    /*uc->uc_mcontext.gregs[REG_RESULT]=0; */
    /*uc->uc_mcontext.gregs[REG_RSP]=(long)child_stack; */
-   
-/*}*/
+}
+void clone_trusted ( const syscall_request * request, int fd) {
+  /*   if ( request.syscall_identifier == __NR_clone ) {*/
+      /*long clone_flags = (long)   request.arg0; */
+      /*char *stack      = (char *) request.arg1;*/
+      /*int  *pid_ptr    = (int *)  request.arg2;*/
+      /*int  *tid_ptr    = (int *)  request.arg3;*/
+      /*void *tls_info   = (void *) request.arg4;*/
+     
+      /*request_result.result=clone(handle_new_thread,*/
+                                    /*allocate_stack(STACK_SIZE), clone_flags,*/
+                                    /*(void *)stack,pid_ptr, tls_info, tid_ptr); */
 
-//Default
-u64_t  untrusted_default(const ucontext_t *ctx ){
-   
-    int syscallNum = -1; 
+    /*} else {*/
+      /*request_result.result = DoSyscall(&request);*/
+    /*}*/
+      /*request_result.cookie = request.cookie; */
 
-    syscallNum = ctx->uc_mcontext.gregs[REG_SYSCALL];
+    /*[>INTR_RES(write(local_info.fd_remote_process,(char *)&request_result,sizeof(request_result))<], nwrite); */
 
-    DPRINT(DEBUG_INFO, "Start DEFAULT handler for < %s > \n", syscall_names[syscallNum]);
-
-    /*memset((void*)request, 0, sizeof(syscall_request)); */
- 
-   /*request->syscall_identifier = context->uc_mcontext.gregs[REG_SYSCALL]; */
-   /*request->arg0 = context->uc_mcontext.gregs[REG_ARG0]; */
-   /*request->arg1 = context->uc_mcontext.gregs[REG_ARG1]; */
-   /*request->arg2 = context->uc_mcontext.gregs[REG_ARG2]; */
-   /*request->arg3 = context->uc_mcontext.gregs[REG_ARG3]; */
-   /*request->arg4 = context->uc_mcontext.gregs[REG_ARG4];*/
-   /*request->arg5 = context->uc_mcontext.gregs[REG_ARG5]; */
-   /*request->cookie = get_local_tid();  */
-
-   DPRINT(DEBUG_INFO, " End DEFAULT handler for < %s > \n", syscall_names[syscallNum]);
-   return 0; 
 }
 
-void trusted_default (const syscall_request *req){
-
-    DPRINT(DEBUG_INFO, "DEFAULT trusted thread \n");
+/* EXIT */ 
+u64_t exit_untrusted ( const ucontext_t context) {
 }
-//open 
-void sys_request_open(syscall_request *req, const ucontext_t * uc ){
-DPRINT(DEBUG_INFO, "Open request\n");
-} 
+void exit_trusted (const syscall_request * request, int  fd) {
+/*     if ( request.syscall_identifier == __NR_clone ) {*/
+      /*long clone_flags = (long)   request.arg0; */
+      /*char *stack      = (char *) request.arg1;*/
+      /*int  *pid_ptr    = (int *)  request.arg2;*/
+      /*int  *tid_ptr    = (int *)  request.arg3;*/
+      /*void *tls_info   = (void *) request.arg4;*/
+     
+      /*request_result.result=clone(handle_new_thread,*/
+                                    /*allocate_stack(STACK_SIZE), clone_flags,*/
+                                    /*(void *)stack,pid_ptr, tls_info, tid_ptr); */
 
-/*void fill_syscall_request(  const ucontext_t * context,*/
-                            /*syscall_request * request)*/
-/*{*/
-  
-/*[>   if (syscall_table &&<]*/
-       /*[>syscall_table[request->syscall_identifier].handler != NO_HANDLER)<]*/
-       /*[>syscall_table[request->syscall_identifier].handler(request , context); <]*/
-/*}*/
+    /*} else {*/
+      /*request_result.result = DoSyscall(&request);*/
+    /*}*/
+      /*request_result.cookie = request.cookie; */
 
-/*int send_syscall_request(const syscall_request * req) */
-/*{*/
-   /*int sent; */
-   /*int fd = get_local_fd(); */
-
-   /*INTR_RES(write( fd,(char *)req, sizeof(syscall_request)), sent); */
-
-    /*if (req->has_indirect_arguments) */
-      /*for (int i=0; i< req->indirect_arguments; i++)*/
-          /*INTR_RES(write(fd,*/
-                      /*(char *)req->args[i].content,req->args[i].size), sent);     */
-    /*return sent; */
-/*}*/
-
-/*int get_syscall_result (syscall_result * res)*/
-/*{*/
-    /*int received;*/
-    /*int fd = get_local_fd(); */
-    /*pid_t tid = get_local_tid(); */
-
-    /*INTR_RES(read(fd, (char *)res, sizeof(syscall_result)), received); */
-
-    /*if (res->cookie != tid)*/
-        /*die("cookie verification failed (result)"); */
-
-    /*return received; */
-/*}*/
-
-
+    /*INTR_RES(write(local_info.fd_remote_process,(char *)&request_result,sizeof(request_result)), nwrite); */
+}

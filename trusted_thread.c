@@ -33,12 +33,11 @@ extern char * syscall_names[];
 // Semaphore to syncronize two thread
 static sem_t binary_semaphore; 
 
-long DoSyscall( syscall_request * );
 asm(
     ".pushsection .text, \"ax\", @progbits\n"
-    ".internal DoSyscall\n"
-    ".global DoSyscall\n"
-    "DoSyscall:\n"
+    ".internal do_syscall\n"
+    ".global do_syscall\n"
+    "do_syscall:\n"
 #if defined(__x86_64__)
     "push %rdi\n"
     "push %rsi\n"
@@ -157,11 +156,10 @@ int  trusted_thread(void * arg)
   while (ALWAYS) 
   {
     syscall_request request; 
-    syscall_result request_result; 
-    int nread=0, nwrite=0; 
+    int nread=0; 
+    int syscallNum=-1; 
 
     memset(&request, 0, sizeof(request));
-    memset(&request_result, 0, sizeof(request_result)); 
 
     /* The trusted thread is stopped here */ 
     INTR_RES(read(local_info.fd_remote_process ,
@@ -177,51 +175,11 @@ int  trusted_thread(void * arg)
         die("Failed read system call arguments"); 
     }
 
-    if ( request.syscall_identifier == __NR_exit) {
-     
-      int res=-1; 
-
-      fprintf(stderr, "Exit\n"); 
-
-/*      if ((res=kill(untrusted_tid, SIGTERM)) < 0)*/
-          /*die("Error kill"); */
-
-      DPRINT(DEBUG_INFO, "Trusted thread %d, I have terminated application %d\n", 
-              local_info.my_tid, request.cookie); 
+    // HANDLER 
+    syscallNum = request.syscall_identifier; 
+    syscall_table_[syscallNum].handler_trusted(&request,local_info.fd_remote_process); 
       
-     
-      request_result.cookie = request.cookie; 
-      request_result.result = res; 
-
-  //    INTR_RES(write(local_info.fd_remote_process,(char *)&request_result,sizeof(request_result)), nwrite); 
-   
-      // I should clse also the fd of the untrusted process 
-      close(local_info.fd_remote_process); 
-      _exit(0); 
     }
-    if ( request.syscall_identifier == __NR_clone ) {
-      long clone_flags = (long)   request.arg0; 
-      char *stack      = (char *) request.arg1;
-      int  *pid_ptr    = (int *)  request.arg2;
-      int  *tid_ptr    = (int *)  request.arg3;
-      void *tls_info   = (void *) request.arg4;
-     
-      request_result.result=clone(handle_new_thread,
-                                    allocate_stack(STACK_SIZE), clone_flags,
-                                    (void *)stack,pid_ptr, tls_info, tid_ptr); 
-
-    } else {
-      request_result.result = DoSyscall(&request);
-    }
-      request_result.cookie = request.cookie; 
-
-    INTR_RES(write(local_info.fd_remote_process,(char *)&request_result,sizeof(request_result)), nwrite); 
-
-    DPRINT(DEBUG_INFO, "TRUSTED_THREAD %d%ld executed syscall %s\n", local_info.my_tid, syscall(SYS_gettid),syscall_names[request.syscall_identifier]); 
-
-    if (nwrite < (int)sizeof(request_result)) 
-        die("Failed write system call arguments"); 
-  }
   
   return SUCCESS;
 }

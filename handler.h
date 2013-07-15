@@ -35,9 +35,7 @@ typedef struct __attribute__((packed)) {
 } syscall_result;
 
 //Default
-extern void trusted_default (const syscall_request *); 
+extern void trusted_default (const syscall_request *, int fd); 
 extern u64_t untrusted_default(const ucontext_t *); 
-//open 
-extern void sys_request_open(syscall_request *, const ucontext_t * ); 
 
 #endif /* end of include guard: HANDLER_H */
