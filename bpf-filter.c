@@ -22,8 +22,6 @@
 #define __USE_GNU 1
 #define _GNU_SOURCE 1
 
-
-
 int  find_function_boundaries( char * instr, char **start, char ** end ) 
 {
 

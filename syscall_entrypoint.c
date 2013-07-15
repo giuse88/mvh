@@ -308,7 +308,7 @@ asm(
     /*"call 12f\n"*/
  /*"12:pop  %ebx\n"*/
     /*"add  $(_GLOBAL_OFFSET_TABLE_+(.-12b)), %ebx\n"*/
-    /*"mov  syscall_table@GOT(%ebx), %ebx\n"*/
+    /*"mov  syscall_table_@GOT(%ebx), %ebx\n"*/
     /*"add  0(%ebx), %eax\n"*/
     /*"mov  0(%eax), %eax\n"*/
 

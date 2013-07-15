@@ -4,10 +4,13 @@
 #include <sys/types.h>
 #include "trusted_thread.h"
 
-#define NO_HANDLER (void*)NULL 
-
 struct syscall_handler {
-  void     (*handler)(syscall_request *, const ucontext_t *); 
+  // handler executes when the application make a request for a system call
+  void     (*handler_request_untrusted)(syscall_request *, const ucontext_t *); 
+  // handler executed by the untrudted thread when it receives the result of system call
+  void     (*handler_result_untrusted)( const syscall_request *); 
+  //handler executed by the trusted thread when it receives a request 
+  void     (*handler_trusted)( const syscall_request *); 
 };
 
 /* INTERFACE */

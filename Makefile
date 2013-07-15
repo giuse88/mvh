@@ -32,8 +32,12 @@ sandbox.o: sandbox.c
 trusted_thread.o: trusted_thread.c
 	${CC} trusted_thread.c -fPIC -c ${DEBUG} ${FLAGS} -o trusted_thread.o 
 
+handler.o: handler.c
+	${CC} handler.c -fPIC -c ${FLAGS} ${DEBUG} -o handler.o
+
 maps.o: maps.c
 	${CC} maps.c -fPIC -c ${FLAGS} ${DEBUG} -o maps.o
+
 
 bpf-filter.o: bpf-filter.c
 	${CC} bpf-filter.c -fPIC -c ${FLAGS} ${DEBUG} -o bpf-filter.o
@@ -59,8 +63,8 @@ syscall_table.o: syscall_table.c
 preload.o: preload.c
 	${CC} preload.c -fPIC -c ${FLAGS} ${DEBUG} -o preload.o
 
-preload.so: tls.o  syscall_table.o fault.o mmalloc.o library.o maps.o sandbox.o preload.o error.o trusted_thread.o bpf-filter.o x86_decoder.o syscall_entrypoint.o 
-	${LINKER} ${LDFLAGS} -fPIC -shared error.o tls.o  fault.o syscall_table.o x86_decoder.o library.o bpf-filter.o maps.o mmalloc.o  preload.o syscall_entrypoint.o sandbox.o trusted_thread.o -o preload.so 
+preload.so: tls.o handler.o syscall_table.o fault.o mmalloc.o library.o maps.o sandbox.o preload.o error.o trusted_thread.o bpf-filter.o x86_decoder.o syscall_entrypoint.o 
+	${LINKER} ${LDFLAGS} -fPIC -shared handler.o error.o tls.o  fault.o syscall_table.o x86_decoder.o library.o bpf-filter.o maps.o mmalloc.o  preload.o syscall_entrypoint.o sandbox.o trusted_thread.o -o preload.so 
 
 run: mvh preload.so  
 	@ ./mvh --private -s 127.0.0.1 -p 5555  /bin/ls -a 
