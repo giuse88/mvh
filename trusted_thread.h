@@ -6,42 +6,8 @@
 #include "abstract_data/list.h" 
 #include "sandbox.h" 
 
-typedef unsigned long register_size;
-
-#define MAX_ARGS 1
-
-struct indirect_argument
-{
-    char * content; 
-    size_t size;
-    unsigned argument_number;
-}; 
-
 
 typedef enum {UNTRUSTED_THREAD, TRUSTED_THREAD} thread_type;
-
-typedef struct __attribute__((packed))
-{
-   register_size syscall_identifier; 
-   register_size arg0; 
-   register_size arg1; 
-   register_size arg2; 
-   register_size arg3; 
-   register_size arg4; 
-   register_size arg5; 
-   int cookie; 
-   bool ignore;
-   bool has_indirect_arguments; 
-   int  indirect_arguments;
-   struct indirect_argument args[MAX_ARGS]; 
-} syscall_request; 
-
-typedef struct __attribute__((packed)) 
-{
-    register_size result;
-    int cookie; 
-} syscall_result;
-
 struct thread_info
 {
   pid_t pid;
@@ -81,12 +47,5 @@ struct untrusted_thread_list {
 }; 
 
 extern int  create_trusted_thread(); 
-extern void print_syscall_info(const syscall_request * ); 
-extern void fill_syscall_request(
-                                  const ucontext_t * context,  syscall_request * request); 
-extern int  send_syscall_request( 
-                                  const syscall_request * req); 
-extern int  get_syscall_result (  
-                                  syscall_result * res); 
 
 #endif /* end of include guard: TRUSTED_THREAD_H */

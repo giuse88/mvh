@@ -1,4 +1,3 @@
-#include "common.h"
 #include "bpf-filter.h"
 #include "trusted_thread.h"
 #include <signal.h>
@@ -6,7 +5,6 @@
 #include <stdlib.h> 
 #include <stdio.h> 
 #include <string.h>
-#include <ucontext.h> 
 #include "x86_decoder.h"
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -14,13 +12,10 @@
 #include "library.h" 
 #include "sandbox.h"
 #include "tls.h"
-
 #include "syscall_x64.h"
-
 #include <sys/syscall.h>
-
-#define __USE_GNU 1
-#define _GNU_SOURCE 1
+#include "common.h"
+#include "syscall_table.h" 
 
 int  find_function_boundaries( char * instr, char **start, char ** end ) 
 {
@@ -47,57 +42,40 @@ int  find_function_boundaries( char * instr, char **start, char ** end )
 void emulator(int nr, siginfo_t  *info, void *void_context)
 {
   ucontext_t *ctx = (ucontext_t *)(void_context);
-  register_size _syscall,pc, stack_base, stack; 
-  syscall_request syscall_request; 
-  syscall_result syscall_result; 
-  /*char *start=NULL, *end=NULL; */
-
-
+  u64_t syscallNum; 
+  pid_t tid= (pid_t)get_local_tid(); 
+  
   if (info->si_code != SYS_SECCOMP)
     return;
   
   if (!ctx) 
     return;
 
-  _syscall = ctx->uc_mcontext.gregs[REG_SYSCALL];
-/*  pc=ctx->uc_mcontext.gregs[REG_PC];*/
-  /*stack=ctx->uc_mcontext.gregs[REG_STACK];*/
-  /*stack_base=ctx->uc_mcontext.gregs[REG_BASE];*/
+  syscallNum = ctx->uc_mcontext.gregs[REG_SYSCALL];
 
-  pid_t tid= (pid_t)get_local_tid(); 
   /*// Note  si_call_addr points to the instruction after the syscall instruction */
-  DPRINT(DEBUG_INFO, "== [%d] Start emulation of %s \n", tid ,syscall_names[_syscall]);
-  DPRINT(DEBUG_INFO, "Syscall instruction address %p\n", info->si_call_addr);
+  DPRINT(DEBUG_INFO, "== [%d] Start emulation of %s \n", tid ,syscall_names[syscallNum]);
+ /* Pathc Disable 
+  * DPRINT(DEBUG_INFO, "Syscall instruction address %p\n", info->si_call_addr);
+  char *start=NULL, *end=NULL; 
+   let assume that the boundaries are correct 
+  find_function_boundaries((char *)info->si_call_addr, &start, &end); 
+  DPRINT(DEBUG_INFO, "Function start %p end %p \n",start, end);
+   disable the patch mechanism 
+  patch_syscalls_in_func(start, end);
+  */
+  /*execute system call handler*/
+  ctx->uc_mcontext.gregs[REG_RESULT] = syscall_table_[syscallNum].handler_untrusted(ctx);
 
-  // let assume that the boundaries are correct 
-/*  find_function_boundaries((char *)info->si_call_addr, &start, &end); */
-  /*DPRINT(DEBUG_INFO, "Function start %p end %p \n",start, end);*/
-
-  //  disable the patch mechanism 
-  /*patch_syscalls_in_func(start, end);*/
- 
-  fill_syscall_request(ctx, &syscall_request); 
-
-  if(send_syscall_request(&syscall_request) < 0 )
-     die("Failed to send system call request"); 
-
-  if(get_syscall_result(&syscall_result) < 0) 
-     die("Failed to receive the syscall result"); 
-
-  ctx->uc_mcontext.gregs[REG_RESULT] = syscall_result.result;
-
-  DPRINT(DEBUG_INFO, "== [%d] End emulation of %s\n", tid,syscall_names[_syscall]);
-
+  DPRINT(DEBUG_INFO, "== [%d] End emulation of %s\n", tid,syscall_names[syscallNum]);
   return;
 }
- int install_filter(int fd)
-{
+int install_filter(int fd){
   struct sock_filter f[] = 
   {
     VALIDATE_ARCHITECTURE,
     EXAMINE_SYSCALL,
     ALLOW_SYSCALL(rt_sigreturn),
-    ALLOW_SYSCALL(rt_sigprocmask),
     ALLOW_ARGUMENT(write, 0, fd),
     ALLOW_ARGUMENT(read, 0, fd),
 #ifdef DEBUG

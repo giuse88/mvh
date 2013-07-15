@@ -1,7 +1,8 @@
 #include "syscall_entrypoint.h"
 #include "debug.h"
 #include "sandbox.h"
-#include "trusted_thread.h" 
+#include "trusted_thread.h"
+#include "handler.h" 
 
 // TODO(markus): change this into a function that returns the address of the
 // assembly code. If that isn't possible for sandbox_clone, then move that
@@ -387,14 +388,15 @@ int pad_request( unsigned long arg0,
     request.arg4 = arg4;
     request.arg5 = arg5; 
 
-    // debug 
-    print_syscall_info(&request); 
+    // TODO this needs to be rewritten 
+    /*// debug */
+    /*print_syscall_info(&request); */
 
-    // send 
-    send_syscall_request(&request);
+    /*// send */
+    /*send_syscall_request(&request);*/
 
-    // result 
-    get_syscall_result(&result); 
+    /*// result */
+    /*get_syscall_result(&result); */
 
     // put the result in rax
     return result.result; 

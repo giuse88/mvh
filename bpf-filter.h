@@ -2,7 +2,6 @@
 #define _SECCOMP_BPF_H_
 
 #define _GNU_SOURCE 1
-#define __USE_GNU 1
 
 #include <sys/prctl.h>
 #include <linux/audit.h>
@@ -15,7 +14,8 @@
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 #include <linux/unistd.h>
-#include <ucontext.h>
+
+#include "common.h" 
 
 #ifdef HAVE_LINUX_SECCOMP_H
   #include <linux/seccomp.h>

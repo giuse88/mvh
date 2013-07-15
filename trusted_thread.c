@@ -20,12 +20,12 @@
 
 #include <stdlib.h> 
 #include "tls.h" 
+#include "handler.h"
 
 extern char * syscall_names[];
 
 #include "linux_syscall_support.h" 
 
-#define   __USE_GNU    1
 #define   _GNU_SOURCE  1
 
 #define STACK_SIZE 0x8000
@@ -284,54 +284,6 @@ int create_trusted_thread()
   DPRINT(DEBUG_INFO, "The trusted thread has been created\n");
 
   return SUCCESS; 
-}
-
-void fill_syscall_request(  const ucontext_t * context,
-                            syscall_request * request)
-{
-   memset((void*)request, 0, sizeof(syscall_request)); 
- 
-   request->syscall_identifier = context->uc_mcontext.gregs[REG_SYSCALL]; 
-   request->arg0 = context->uc_mcontext.gregs[REG_ARG0]; 
-   request->arg1 = context->uc_mcontext.gregs[REG_ARG1]; 
-   request->arg2 = context->uc_mcontext.gregs[REG_ARG2]; 
-   request->arg3 = context->uc_mcontext.gregs[REG_ARG3]; 
-   request->arg4 = context->uc_mcontext.gregs[REG_ARG4];
-   request->arg5 = context->uc_mcontext.gregs[REG_ARG5]; 
-
-   request->cookie = get_local_tid();  
-
-/*   if (syscall_table &&*/
-       /*syscall_table[request->syscall_identifier].handler != NO_HANDLER)*/
-       /*syscall_table[request->syscall_identifier].handler(request , context); */
-}
-
-int send_syscall_request(const syscall_request * req) 
-{
-   int sent; 
-   int fd = get_local_fd(); 
-
-   INTR_RES(write( fd,(char *)req, sizeof(syscall_request)), sent); 
-
-    if (req->has_indirect_arguments) 
-      for (int i=0; i< req->indirect_arguments; i++)
-          INTR_RES(write(fd,
-                      (char *)req->args[i].content,req->args[i].size), sent);     
-    return sent; 
-}
-
-int get_syscall_result (syscall_result * res)
-{
-    int received;
-    int fd = get_local_fd(); 
-    pid_t tid = get_local_tid(); 
-
-    INTR_RES(read(fd, (char *)res, sizeof(syscall_result)), received); 
-
-    if (res->cookie != tid)
-        die("cookie verification failed (result)"); 
-
-    return received; 
 }
 
 void print_thread_info(const struct thread_info * info)

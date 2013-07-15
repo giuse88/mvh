@@ -3,6 +3,8 @@
 #include <sys/mman.h>
 #include "common.h"
 #include "tls.h" 
+#include "handler.h" 
+#include "sandbox.h" 
 
 #if  defined (__x86_64__)
   #define MAX_SYSTEM_CALL 312  
@@ -12,7 +14,6 @@
 
 // SYSTEM CALL TABLE ( GLOBAL)
 struct syscall_handler * syscall_table_;
-extern struct sandbox_info sandbox; 
 
 size_t get_syscall_table_size() {
   return ((sizeof(struct syscall_handler) * (MAX_SYSTEM_CALL + 1)) + 4095) & ~4095;
@@ -35,10 +36,9 @@ void initialize_syscall_table()
   // a bit ugly but i don t want to expose the 
   // system call handler in the global memory without 
   // any memory protection mechanism
- #include "policy.h" 
+ #include "policy.h"  
  
-
- const struct policy* default_policy=
+  const struct policy* default_policy=
       (sandbox.visibility == PUBLIC) ? public_policy : private_policy; 
  // they should be equal  
   int size =  (sandbox.visibility == PUBLIC)? sizeof(public_policy) : sizeof(public_policy); 
@@ -54,13 +54,10 @@ void initialize_syscall_table()
   for (const struct policy *policy = default_policy;
        policy-default_policy < (int)(size/sizeof(struct policy));
        ++policy) {
-           syscall_table_[policy->syscallNum].handler_request_untrusted  = policy->handler_request_untrusted;
-           syscall_table_[policy->syscallNum].handler_result_untrusted   = policy->handler_result_untrusted;
-           syscall_table_[policy->syscallNum].handler_trusted            = policy->handler_trusted;
+           syscall_table_[policy->syscallNum].handler_untrusted  = policy->handler_untrusted;
+           syscall_table_[policy->syscallNum].handler_trusted    = policy->handler_trusted;
   }
-
   protect_syscall_table();
-
   DPRINT(DEBUG_INFO, "Loaded system call table\n");  
 
 }

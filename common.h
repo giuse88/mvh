@@ -5,6 +5,9 @@
 #include "debug.h"
 #include "conf.h" 
 
+#define __USE_GNU 1
+#include <ucontext.h>
+
 #ifndef INTERNAL
   #define INTERNAL __attribute__((visibility("internal")))
 #endif
@@ -14,5 +17,8 @@
 
 #define ALWAYS 1
 #define OVERWRITE 1 
+
+typedef unsigned long u64_t; 
+extern char * syscall_names []; 
 
 #endif /* end of include guard: COMMON_H */
