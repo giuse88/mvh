@@ -18,6 +18,13 @@
 #define ALWAYS 1
 #define OVERWRITE 1 
 
+#if  defined (__x86_64__)
+  #define MAX_SYSTEM_CALL 312  
+#else 
+  #error Architecture not supported
+#endif
+
+
 typedef unsigned long u64_t; 
 extern char * syscall_names []; 
 

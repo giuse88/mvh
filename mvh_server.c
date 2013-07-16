@@ -46,7 +46,7 @@ struct thread_group {
 }; 
 #define SIZE_THREAD_GROUP sizeof(struct thread_group)
 
-/* PRINT INFO FUNCTIONS */ 
+/* PRINT FUNCTIONS */ 
 void print_thread_info(const struct thread_info * info, int fd){
     DPRINT(DEBUG_INFO, "%s process %d, %s thread %d, Cookie %d Monitored thread %d, Group %d, Session %d\n Connected over %d\n",  
                          info->visibility == PUBLIC ? "Public" : "Private", info->pid,
@@ -119,7 +119,7 @@ static void start_application( int fd) {
     if (res < COMMAND) 
           die("start process");
 }
-
+// TODO refactoring this fucntion name overlaps with the function define in trusted_thread.c 
 int receive_syscall_request( int fd,  syscall_request * req) { 
     int res = -1; 
     memset(req, 0, sizeof(syscall_request)); 
@@ -129,7 +129,6 @@ int receive_syscall_request( int fd,  syscall_request * req) {
    
     return res; 
 }
-
 int receive_syscall_result( int fd,  syscall_result * result) { 
     int res = -1; 
     memset(result, 0, sizeof(syscall_result)); 
@@ -138,9 +137,6 @@ int receive_syscall_result( int fd,  syscall_result * result) {
         die("Failed receiving system call result"); 
     return res; 
 }
-
-// TODO refactoring this fucntion name overlaps with the function define in trusted_thread.c 
-//
 int __send_syscall_request( int fd, const syscall_request * req) { 
     int res = -1; 
     INTR_RES(write(fd, req, sizeof(syscall_request)), res);
@@ -148,7 +144,6 @@ int __send_syscall_request( int fd, const syscall_request * req) {
         die("Failed sending system call request"); 
     return res; 
 }
-
 int __send_syscall_result( int fd, const syscall_result * result) { 
     int res = -1; 
     INTR_RES(write(fd, result, sizeof(syscall_result)), res);
@@ -156,7 +151,6 @@ int __send_syscall_result( int fd, const syscall_result * result) {
         die("Failed sending system call result"); 
     return res; 
 }
-
 void  * handle_thread_pair(void * arg) {
 
     int fds[NFDS]={0}; 
@@ -391,7 +385,6 @@ void update_thread_group(struct  thread_group *group,
           die("Error unkown public thread"); 
     }
 }
-
 void handle_connection(int sockfd)
 {
 
@@ -424,7 +417,6 @@ void handle_connection(int sockfd)
        pthread_create(&tid, NULL, handle_thread_pair, NULL); 
     }
 }
-
 int run_mvh_server(int port) 
 {
     int listenfd = 0, connfd = 0;

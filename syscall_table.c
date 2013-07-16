@@ -6,12 +6,6 @@
 #include "handler.h" 
 #include "sandbox.h" 
 
-#if  defined (__x86_64__)
-  #define MAX_SYSTEM_CALL 312  
-#else 
-  #error Architecture not supported
-#endif
-
 // SYSTEM CALL TABLE ( GLOBAL)
 struct syscall_handler * syscall_table_;
 
