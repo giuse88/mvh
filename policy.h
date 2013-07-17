@@ -9,10 +9,10 @@
 struct policy {
     unsigned syscallNum;
     u64_t     (*handler_untrusted)(const ucontext_t *  );  
-    void     (*handler_trusted)(const syscall_request *, int fd);  
+    void     (*handler_trusted)(int fd, const struct syscall_header *, const struct syscall_registers *);  
 }; 
 
-void      (*default_trusted_) (const syscall_request *, int fd) = trusted_default; 
+void      (*default_trusted_) (int fd, const struct syscall_header *, const struct syscall_registers *) = trusted_default; 
 u64_t     (*default_untrusted_)(const ucontext_t *) = untrusted_default; 
 
 #define DEFAULT_UNTRUSTED  default_untrusted_

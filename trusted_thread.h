@@ -46,6 +46,6 @@ struct untrusted_thread_list {
     struct list_head list;
 }; 
 
-extern long do_syscall( syscall_request * );
+extern long do_syscall( struct syscall_request * );
 extern int  create_trusted_thread(); 
 #endif /* end of include guard: TRUSTED_THREAD_H */

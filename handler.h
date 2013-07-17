@@ -4,38 +4,57 @@
 #include "common.h" 
 #include <stdbool.h> 
 
-typedef unsigned long register_size;
+#define CLEAN_MSG(msg) memset(msg,0, sizeof( struct msghdr))
+#define CLEAN_RES(res) memset(res,0, sizeof( struct syscall_result))
+#define CLEAN_REG(reg) memset(reg,0, sizeof( struct syscall_registers))
+#define CLEAN_HEA(hea) memset(hea,0, sizeof( struct syscall_header))
+#define CLEAN_REQ(req) memset(req,0, sizeof( struct syscall_header))
 
-#define MAX_ARGS 1
+struct syscall_request{
+   u64_t syscall_identifier; 
+   u64_t arg0; 
+   u64_t arg1; 
+   u64_t arg2; 
+   u64_t arg3; 
+   u64_t arg4; 
+   u64_t arg5; 
+} __attribute__((packed));
+#define SIZE_REQUEST sizeof(struct syscall_request)
 
-struct indirect_argument{
-    char * content; 
-    size_t size;
-    unsigned argument_number;
-}; 
-// Careful handling this structure 
-// it is used to call the do system call function
-typedef struct __attribute__((packed)){
-   register_size syscall_identifier; 
-   register_size arg0; 
-   register_size arg1; 
-   register_size arg2; 
-   register_size arg3; 
-   register_size arg4; 
-   register_size arg5; 
-   int cookie; 
-   bool ignore;
-   bool has_indirect_arguments; 
-   int  indirect_arguments;
-   struct indirect_argument args[MAX_ARGS]; 
-} syscall_request; 
-typedef struct __attribute__((packed)) {
-    register_size result;
+struct syscall_header { 
+    int syscall_num; 
     int cookie; 
-} syscall_result;
+    u64_t address;
+    u64_t extra; 
+}__attribute__((packed)) ; 
+#define SIZE_HEADER sizeof( struct syscall_header)
 
-//Default
-extern void trusted_default (const syscall_request *, int fd); 
+struct syscall_result {
+    u64_t result; 
+    int cookie; 
+    u64_t extra;
+}; 
+#define SIZE_RESULT sizeof( struct syscall_result) 
+
+struct syscall_registers{ 
+   u64_t arg0; 
+   u64_t arg1; 
+   u64_t arg2; 
+   u64_t arg3; 
+   u64_t arg4; 
+   u64_t arg5; 
+}__attribute__((packed)); 
+#define SIZE_REGISTERS sizeof(struct syscall_registers)
+
+//default
+extern void trusted_default ( int fd, const  struct syscall_header *, const struct syscall_registers *); 
 extern u64_t untrusted_default(const ucontext_t *); 
+
+// IOV position for the register 
+#define REG 0
+
+#define IOV_DEFAULT 1
+#define IOV_OPEN    2 
+#define IOV_DEFAULT_RESULT 2
 
 #endif /* end of include guard: HANDLER_H */

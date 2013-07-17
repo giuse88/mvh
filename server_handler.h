@@ -2,9 +2,11 @@
 #define SERVER_HANDLER_H
 
 #include "handler.h" 
+#include <fcntl.h> 
+#include <poll.h> 
 
 struct server_handler {
-    void   (*handler)(const syscall_request *, const syscall_request *); 
+    void   (*handler)(int [], struct pollfd [], const struct syscall_header *, const struct syscall_header *); 
 }; 
 
 extern struct server_handler * syscall_table_server_; 

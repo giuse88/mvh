@@ -374,11 +374,11 @@ int pad_request( unsigned long arg0,
                   unsigned long sysnum)
 {
 
-    syscall_request request;  
-    syscall_result  result; 
+   struct  syscall_request request;  
+   struct syscall_result  result; 
 
-    memset((void*)&request, 0, sizeof(syscall_request)); 
-    memset((void*)&result, 0, sizeof(syscall_result)); 
+    memset((void*)&request, 0, sizeof(request)); 
+    memset((void*)&result, 0, sizeof(result)); 
     
     request.syscall_identifier = sysnum; 
     request.arg0 = arg0;  

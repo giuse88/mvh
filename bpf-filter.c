@@ -78,6 +78,8 @@ int install_filter(int fd){
     ALLOW_SYSCALL(rt_sigreturn),
     ALLOW_ARGUMENT(write, 0, fd),
     ALLOW_ARGUMENT(read, 0, fd),
+    ALLOW_ARGUMENT(sendmsg, 0, fd),
+    ALLOW_ARGUMENT(recvmsg, 0, fd),
 #ifdef DEBUG
     ALLOW_ARGUMENT(write , 0, STDERR_FILENO),
 #endif

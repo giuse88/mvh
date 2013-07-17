@@ -97,7 +97,7 @@ asm(
 char * allocate_stack(size_t);  
 int    connect_remote_process(struct connection_info * , thread_type , int );
 void   print_thread_info(const struct thread_info * info);
-void   print_syscall_info(const syscall_request * req); 
+/*void   print_syscall_info(const syscall_request * req); */
 
 
  static void return_from_clone_syscall(void *stack) {
@@ -155,30 +155,43 @@ int  trusted_thread(void * arg)
 
   while (ALWAYS) 
   {
-    syscall_request request; 
+    struct syscall_header request; 
+    struct syscall_registers regs; 
     int nread=0; 
     int syscallNum=-1; 
+    struct msghdr msg; 
+    struct iovec io[2];
+
 
     memset(&request, 0, sizeof(request));
+    memset(&regs, 0, sizeof(regs));
+    memset(&msg, 0, sizeof(msg));
 
-    /* The trusted thread is stopped here */ 
-    INTR_RES(read(local_info.fd_remote_process ,
-                  (char *)&request,  sizeof(request)), nread); 
-   
-    DPRINT(DEBUG_INFO, "TRUSTED THREAD %d %ld request for  %s\n",
-           local_info.my_tid, syscall(SYS_gettid), 
-           syscall_names[request.syscall_identifier]); 
+    
+    io[0].iov_len=SIZE_HEADER; 
+    io[0].iov_base= &request; 
 
-    if (nread < (int)sizeof(request)) { /* || request.cookie != local_info.monitored_thread_id) */
-        DPRINT(DEBUG_INFO, "Trusted thread %ld cannot read the argumnt of %ld, cookie %d\n",
-                syscall(SYS_gettid), request.syscall_identifier, request.cookie);  
+    io[1].iov_len=SIZE_REGISTERS; 
+    io[1].iov_base= &regs;
+
+    msg.msg_iov=io; 
+    msg.msg_iovlen=2; 
+
+    nread=recvmsg(local_info.fd_remote_process, &msg, 0); 
+
+     if ((nread < SIZE_HEADER + SIZE_REGISTERS )  || request.cookie != local_info.monitored_thread_id){ 
+        DPRINT(DEBUG_INFO, "Trusted thread %ld cannot read the argumnt of %d, cookie %d\n",
+                syscall(SYS_gettid), request.syscall_num, request.cookie);  
         die("Failed read system call arguments"); 
     }
 
-    // HANDLER 
-    syscallNum = request.syscall_identifier; 
-    syscall_table_[syscallNum].handler_trusted(&request,local_info.fd_remote_process); 
-      
+    DPRINT(DEBUG_INFO, "TRUSTED THREAD %d %ld request for  %s\n",
+           local_info.my_tid, syscall(SYS_gettid), 
+           syscall_names[request.syscall_num]); 
+
+       // HANDLER 
+    syscallNum = request.syscall_num; 
+    syscall_table_[syscallNum].handler_trusted(local_info.fd_remote_process, &request, &regs);  
     }
   
   return SUCCESS;
@@ -319,11 +332,3 @@ char * allocate_stack(size_t stack_size)
   return (char *) stack + stack_size;
 }
 
-void  print_syscall_info(const syscall_request * req) 
-{
-
-    fprintf(stderr, "System call %lu:\n", req->syscall_identifier); 
-    fprintf(stderr, "Arg0 %lu,\t Arg1 %lu,\t Arg2 %lu,\t Arg3 %lu,\t \
-            Arg4 %lu,\tArg5 %lu \n",req->arg0,  req->arg1,\
-            req->arg2, req->arg3,  req->arg4, req->arg5); 
-}
