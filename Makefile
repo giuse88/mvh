@@ -1,6 +1,6 @@
 CC=gcc 
 FLAGS=-g  -std=gnu99 -O0  
-DEBUG=  -DCOLOR -DDEBUG 
+DEBUG= #-DCOLOR -DDEBUG 
 LDFLAGS=-ldl -g -lpthread  
 PWD=`pwd`
 LIB=
@@ -9,7 +9,7 @@ LINKER=gcc
 all : mvh build_server 
 
 build_server: main_mvh_server.c mvh_server.c error.c
-	${CC} ${DEBUG}  ${FLAGS} -lpthread main_mvh_server.c server_handler.c mvh_server.c error.c -o mvh_server 
+	${CC} -g  ${DEBUG}  ${FLAGS} -lpthread main_mvh_server.c server_handler.c mvh_server.c error.c -o mvh_server 
 
 mvh : main.o mvh.o error.o preload.so  
 	${LINKER} main.o mvh.o error.o -o mvh 	

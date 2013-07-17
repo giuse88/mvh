@@ -55,16 +55,7 @@ void emulator(int nr, siginfo_t  *info, void *void_context)
 
   /*// Note  si_call_addr points to the instruction after the syscall instruction */
   DPRINT(DEBUG_INFO, "== [%d] Start emulation of %s \n", tid ,syscall_names[syscallNum]);
- /* Pathc Disable 
-  * DPRINT(DEBUG_INFO, "Syscall instruction address %p\n", info->si_call_addr);
-  char *start=NULL, *end=NULL; 
-   let assume that the boundaries are correct 
-  find_function_boundaries((char *)info->si_call_addr, &start, &end); 
-  DPRINT(DEBUG_INFO, "Function start %p end %p \n",start, end);
-   disable the patch mechanism 
-  patch_syscalls_in_func(start, end);
-  */
-  /*execute system call handler*/
+
   ctx->uc_mcontext.gregs[REG_RESULT] = syscall_table_[syscallNum].handler_untrusted(ctx);
 
   DPRINT(DEBUG_INFO, "== [%d] End emulation of %s\n", tid,syscall_names[syscallNum]);

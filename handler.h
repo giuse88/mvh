@@ -20,22 +20,6 @@ struct syscall_request{
    u64_t arg5; 
 } __attribute__((packed));
 #define SIZE_REQUEST sizeof(struct syscall_request)
-
-struct syscall_header { 
-    int syscall_num; 
-    int cookie; 
-    u64_t address;
-    u64_t extra; 
-}__attribute__((packed)) ; 
-#define SIZE_HEADER sizeof( struct syscall_header)
-
-struct syscall_result {
-    u64_t result; 
-    int cookie; 
-    u64_t extra;
-}; 
-#define SIZE_RESULT sizeof( struct syscall_result) 
-
 struct syscall_registers{ 
    u64_t arg0; 
    u64_t arg1; 
@@ -45,16 +29,31 @@ struct syscall_registers{
    u64_t arg5; 
 }__attribute__((packed)); 
 #define SIZE_REGISTERS sizeof(struct syscall_registers)
-
-//default
-extern void trusted_default ( int fd, const  struct syscall_header *, const struct syscall_registers *); 
-extern u64_t untrusted_default(const ucontext_t *); 
+struct syscall_header { 
+    int syscall_num; 
+    int cookie; 
+    u64_t address;
+    u64_t extra;
+    struct syscall_registers regs; 
+}__attribute__((packed)) ; 
+#define SIZE_HEADER sizeof( struct syscall_header)
+struct syscall_result {
+    u64_t result; 
+    int cookie; 
+    u64_t extra;
+}; 
+#define SIZE_RESULT sizeof( struct syscall_result) 
 
 // IOV position for the register 
 #define REG 0
-
 #define IOV_DEFAULT 1
 #define IOV_OPEN    2 
 #define IOV_DEFAULT_RESULT 2
+
+//default
+extern void trusted_default ( int fd, const struct syscall_header *); 
+extern u64_t untrusted_default(const ucontext_t *); 
+
+extern void trusted_exit_group( int, const struct syscall_header *);
 
 #endif /* end of include guard: HANDLER_H */

@@ -160,38 +160,32 @@ int  trusted_thread(void * arg)
     int nread=0; 
     int syscallNum=-1; 
     struct msghdr msg; 
-    struct iovec io[2];
-
+    struct iovec io[1];
 
     memset(&request, 0, sizeof(request));
     memset(&regs, 0, sizeof(regs));
     memset(&msg, 0, sizeof(msg));
 
-    
     io[0].iov_len=SIZE_HEADER; 
     io[0].iov_base= &request; 
 
-    io[1].iov_len=SIZE_REGISTERS; 
-    io[1].iov_base= &regs;
-
     msg.msg_iov=io; 
-    msg.msg_iovlen=2; 
+    msg.msg_iovlen=1; 
 
     nread=recvmsg(local_info.fd_remote_process, &msg, 0); 
 
-     if ((nread < SIZE_HEADER + SIZE_REGISTERS )  || request.cookie != local_info.monitored_thread_id){ 
+    if ((nread < SIZE_HEADER)  || request.cookie != local_info.monitored_thread_id){ 
         DPRINT(DEBUG_INFO, "Trusted thread %ld cannot read the argumnt of %d, cookie %d\n",
                 syscall(SYS_gettid), request.syscall_num, request.cookie);  
         die("Failed read system call arguments"); 
     }
 
-    DPRINT(DEBUG_INFO, "TRUSTED THREAD %d %ld request for  %s\n",
-           local_info.my_tid, syscall(SYS_gettid), 
-           syscall_names[request.syscall_num]); 
+    DPRINT(DEBUG_INFO, ">>> Trusted threaad %d request for  %s\n",
+           local_info.my_tid, syscall_names[request.syscall_num]); 
 
-       // HANDLER 
+    // HANDLER 
     syscallNum = request.syscall_num; 
-    syscall_table_[syscallNum].handler_trusted(local_info.fd_remote_process, &request, &regs);  
+    syscall_table_[syscallNum].handler_trusted(local_info.fd_remote_process, &request);  
     }
   
   return SUCCESS;

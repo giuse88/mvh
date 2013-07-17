@@ -7,14 +7,11 @@
 #include <sys/socket.h>
 #include "mvh_server.h" 
 #include "handler.h" 
+#include <pthread.h> 
 
 #define DEFAULT_SERVER_HANDLER server_default
 struct server_handler * syscall_table_server_; 
 
-#define CLEAN_MSG(msg) memset(msg,0, sizeof( struct msghdr))
-#define CLEAN_RES(res) memset(res,0, sizeof( struct syscall_result))
-#define CLEAN_REG(reg) memset(reg,0, sizeof( struct syscall_registers))
-#define CLEAN_HEA(hea) memset(hea,0, sizeof( struct syscall_header))
 /* Useful functions */ 
 void  syscall_info(const struct  syscall_header * head, const struct syscall_registers *reg, const struct  syscall_result *res, process_visibility vis) {
     static bool first = true; 
@@ -31,10 +28,10 @@ void  syscall_info(const struct  syscall_header * head, const struct syscall_reg
              syscall_names[head->syscall_num], 
              reg->arg0,  reg->arg1,reg->arg2, reg->arg3,  reg->arg4, reg->arg5, res->result,ANSI_COLOR_RESET); 
 }
-size_t forward_syscall_request ( int fd, const struct syscall_header * header, const struct syscall_registers *regs) {
+size_t forward_syscall_request ( int fd, const struct syscall_header * header) {
 
     struct msghdr msg; 
-    struct iovec io[2];
+    struct iovec io[1];
     int sent=-1; 
 
     CLEAN_MSG(&msg);     
@@ -42,17 +39,14 @@ size_t forward_syscall_request ( int fd, const struct syscall_header * header, c
     io[0].iov_len=SIZE_HEADER; 
     io[0].iov_base= header; 
 
-    io[1].iov_len=SIZE_REGISTERS; 
-    io[1].iov_base= regs;
-
     msg.msg_iov=io; 
-    msg.msg_iovlen=2; 
+    msg.msg_iovlen=1; 
     sent=sendmsg(fd, &msg, 0); 
 
     if ( sent < 0) 
         die("Sendmsg (Forward_syscall_request)"); 
 
-    assert(sent == (SIZE_HEADER + SIZE_REGISTERS)); 
+    assert(sent == (SIZE_HEADER)); 
     return sent; 
 
 }
@@ -142,7 +136,14 @@ void server_default ( int fds[] ,struct pollfd pollfds[], const struct syscall_h
      * = Read the result from the trusted thread 
      * = Send back the result to the untrusted trusted
      */ 
-
+ 
+    if(forward_syscall_request(fds[PUBLIC_TRUSTED], public) < 0)
+            die("failed send request public trusted thread");
+    if(forward_syscall_request(fds[PRIVATE_TRUSTED], private) < 0)
+            die("failed send request public trusted thread");
+     
+    DPRINT(DEBUG_INFO, "Forwarded system call requests to the respective thread\n"); 
+   
     do { 
 
     res=poll(pollfds,NFDS,SERVER_TIMEOUT); 
@@ -151,24 +152,6 @@ void server_default ( int fds[] ,struct pollfd pollfds[], const struct syscall_h
             irreversible_error("Connection Time out"); 
     else if ( res < 0 )
             die("pool"); 
-      // there must be at maximun two fd ready  
-      // assert( res <= 2 ); 
-
-    if (pollfds[PUBLIC_UNTRUSTED].revents) {
-        pub_req = true; 
-        bytes_received = receive_syscall_registers(fds[PUBLIC_UNTRUSTED], &public_regs); 
-        DPRINT(DEBUG_INFO, "Received registers %d from %d for system call < %s > over %d\n", 
-                public->cookie, connection.public.untrusted.tid,
-                syscall_names[public->syscall_num], fds[PUBLIC_UNTRUSTED]);
-    }
-
-    if (pollfds[PRIVATE_UNTRUSTED].revents) {
-        priv_req = true; 
-        bytes_received = receive_syscall_registers(fds[PRIVATE_UNTRUSTED], &private_regs); 
-        DPRINT(DEBUG_INFO, "Received registers  %d from %d for system call < %s > over %d\n",
-                private->cookie, connection.private.untrusted.tid, 
-               syscall_names[private->syscall_num], fds[PRIVATE_UNTRUSTED]);
-    }
 
    if (pollfds[PUBLIC_TRUSTED].revents) {
         pub_res=true; 
@@ -185,21 +168,10 @@ void server_default ( int fds[] ,struct pollfd pollfds[], const struct syscall_h
  
     /*//TODO I should also verify the cookie */
    
-    if(pub_req && priv_req) {
- 
-        if(forward_syscall_request(fds[PUBLIC_TRUSTED], public, &public_regs) < 0)
-            die("failed send request public trusted thread");
-        if(forward_syscall_request(fds[PRIVATE_TRUSTED], private, &private_regs) < 0)
-            die("failed send request public trusted thread");
-        
-        DPRINT(DEBUG_INFO, "Forwarded system call requests to the respective thread\n"); 
-        pub_req = false; 
-        priv_req = false; 
-    }
     
     if( pub_res && priv_res) {
-        syscall_info(public, &public_regs, &public_result, PUBLIC); 
-        syscall_info(private,&private_regs, &private_result, PRIVATE); 
+        syscall_info(public, &public->regs, &public_result, PUBLIC); 
+        syscall_info(private,&private->regs, &private_result, PRIVATE); 
         if(forward_syscall_result(fds[PUBLIC_UNTRUSTED], &public_result) < 0)
             die("Failed send request public trusted thread");
         if(forward_syscall_result(fds[PRIVATE_UNTRUSTED], &private_result) < 0)
@@ -208,8 +180,6 @@ void server_default ( int fds[] ,struct pollfd pollfds[], const struct syscall_h
         completed = true; 
         pub_res = false;
         priv_res = false; 
-        CLEAN_REG(&public_regs); 
-        CLEAN_REG(&private_regs);
         CLEAN_RES(&public_result); 
         CLEAN_RES(&private_result); 
     }
@@ -221,6 +191,31 @@ void server_default ( int fds[] ,struct pollfd pollfds[], const struct syscall_h
 /*OPEN*/
 /*******************************************************************/ 
 
+void server_open ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private) {
+
+    DPRINT(DEBUG_INFO, "Open SYSTEM CALL"); 
+
+    // Forward system call to the private version 
+    
+    // get the result 
+   
+    //send back the result to the untrusted threads 
+
+} 
+
+/*EXIT GROUP*/
+void server_exit_group ( int fds[] ,struct pollfd poolfds[], const struct syscall_header * public , const struct syscall_header * private) {
+
+    server_default(fds, poolfds, public, private); 
+
+    for ( int i=0; i< NFDS; i++)
+        close(fds[i]); 
+   
+    memset(&connection, 0, sizeof(connection)); 
+    pthread_exit(NULL); 
+
+}
+
 /************** INSTALL SERVER HANDLER *****************************/ 
 void initialize_server_handler() { 
 
@@ -229,7 +224,7 @@ void initialize_server_handler() {
        void (*handler)(int [] , struct pollfd [] ,const struct syscall_header*,const struct  syscall_header *); 
    } default_policy [] = {
         /*server handler */
-     //  { __NR_open,     sys_server_open }
+      { __NR_exit_group,     server_exit_group }
    }; 
 
 

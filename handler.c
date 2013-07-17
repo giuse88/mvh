@@ -45,24 +45,33 @@ ssize_t send_syscall_header(const ucontext_t * uc, int extra) {
     struct syscall_header header; 
     int fd = get_local_fd();
     size_t sent=-1; 
-
+    struct iovec io[1];
+    struct msghdr msg; 
+  
     memset(&header, 0, sizeof(header)); 
-
-    DPRINT(DEBUG_INFO, "System call header\n"); 
+    memset((void*)&msg, 0, sizeof(msg));  
     
+    // set header 
     header.syscall_num = uc->uc_mcontext.gregs[REG_SYSCALL]; 
     header.address = uc->uc_mcontext.gregs[REG_PC]; 
     header.cookie  = get_local_tid(); 
     header.extra   = extra; 
+    set_reg(&(header.regs), uc);
+    
+    io[0].iov_base = &header; 
+    io[0].iov_len = SIZE_HEADER; 
 
-    INTR_RES(write(fd, (char *)&header, SIZE_HEADER), sent);
+    msg.msg_iov=io; 
+    msg.msg_iovlen=1; 
+   
+    sent = sendmsg(fd, &msg, 0);
+  
+    if( sent < 0)
+       die("Error sending registers");
 
-    DPRINT(DEBUG_INFO, "System call header sent\n"); 
-
-    if ( sent != SIZE_HEADER)
-        die("Error sending header"); 
-
-    return sent; 
+   assert(sent ==  (SIZE_HEADER));
+  
+   return sent; 
 }
 ssize_t send_syscall_result(int fd, struct syscall_result * res) {
  
@@ -95,47 +104,24 @@ ssize_t send_syscall_result(int fd, struct syscall_result * res) {
 u64_t untrusted_default(const ucontext_t *ctx ){
    
     int syscall_num = -1; 
-    struct syscall_registers regs; 
     struct syscall_result result;
     int sent=-1; 
     u64_t extra = 0;  
-    struct iovec io[IOV_DEFAULT];
-    struct msghdr msg; 
-  
+   
     syscall_num = ctx->uc_mcontext.gregs[REG_SYSCALL]; 
-
+    
     DPRINT(DEBUG_INFO, "Start DEFAULT handler for < %s > \n", syscall_names[syscall_num]);
-
-    memset((void*)&regs, 0, sizeof(regs)); 
-    memset((void*)&result,  0, sizeof(result)); 
-    memset((void*)&msg, 0, sizeof(msg));  
-    // reg 
-    set_reg(&regs, ctx);
-    io[REG].iov_len=SIZE_REGISTERS; 
-    io[REG].iov_base=&regs; 
    
-   if (send_syscall_header(ctx, extra)< 0)
-      die("Send syscall header"); 
+    if (send_syscall_header(ctx, extra) < 0)
+        die("Failed to send syscall_header"); 
   
-   msg.msg_iov=io; 
-   msg.msg_iovlen=IOV_DEFAULT; 
-   
-   sent = sendmsg(get_local_fd(), &msg, 0);
-  
-   if( sent < 0)
-       die("Error sending registers");
+    if(receive_syscall_result(&result) < 0 )
+       die("Failed recieve_syscall_result"); 
 
-   DPRINT(DEBUG_INFO, " Sent registers %d \n", sent);
-   // wait for the result 
-   assert(sent ==  SIZE_REGISTERS);
-   
-   if(receive_syscall_result(&result) < 0 )
-       die("Failede get_syscall_result"); 
-
-   DPRINT(DEBUG_INFO, " End DEFAULT handler for < %s > \n", syscall_names[syscall_num]);
-   return (u64_t)result.result; 
+    DPRINT(DEBUG_INFO, " End DEFAULT handler for < %s > \n", syscall_names[syscall_num]);
+    return (u64_t)result.result; 
 }
-void trusted_default (int fd, const struct syscall_header *header, const struct syscall_registers * regs){
+void trusted_default (int fd, const struct syscall_header *header){
 
   struct syscall_result result; 
   struct syscall_request request;
@@ -143,11 +129,11 @@ void trusted_default (int fd, const struct syscall_header *header, const struct 
   memset(&result, 0, sizeof(result)); 
   memset(&request, 0, sizeof(request)); 
 
-  DPRINT(DEBUG_INFO, "Start DEFAULT trusted thread for system call < %s > \n",
+  DPRINT(DEBUG_INFO, ">>> Start DEFAULT trusted thread for system call < %s > \n",
             syscall_names[header->syscall_num]);
 
   request.syscall_identifier = header->syscall_num; 
-  memcpy(&request.arg0, regs, SIZE_REGISTERS); 
+  memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
 
   result.result = do_syscall(&request);
   result.cookie = header->cookie; 
@@ -155,13 +141,13 @@ void trusted_default (int fd, const struct syscall_header *header, const struct 
 
   send_syscall_result(fd, &result); 
 
-  DPRINT(DEBUG_INFO, "End DEFAULT trusted thread for system call < %s > \n",
+  DPRINT(DEBUG_INFO, ">>> End DEFAULT trusted thread for system call < %s > \n",
             syscall_names[header->syscall_num]);
  
 }
 
 /*EXIT_GROUP */
-void trusted_exit_group( int fd, const struct syscall_header *header, const struct syscall_registers *regs) {
+void trusted_exit_group( int fd, const struct syscall_header *header) {
   
   struct syscall_result result; 
   struct syscall_request request;
@@ -169,22 +155,20 @@ void trusted_exit_group( int fd, const struct syscall_header *header, const stru
   CLEAN_RES(&result); 
   CLEAN_REQ(&request); 
 
-  DPRINT(DEBUG_INFO, "Trusted handler for < exit_group >\n");
+  DPRINT(DEBUG_INFO, ">>> Trusted handler for < exit_group >\n");
 
   assert(header->syscall_num == __NR_exit_group);  
 
-  result.result = 0;
+  result.result = 0x0;
   result.cookie = header->cookie; 
   result.extra = 0; 
-  
-  send_syscall_result(fd, &result); 
 
+  send_syscall_result(fd, &result); 
   // I should close also the untrusted connection
   close(fd); 
 
-  DPRINT(DEBUG_INFO, "Trusted handler for < exit_group > terminated\n");
-
-  syscall(SYS_exit_group); 
+  DPRINT(DEBUG_INFO, ">>> Trusted handler for < exit_group > terminated\n");
+  syscall(SYS_exit_group, 0); 
 }
 /*EXIT*/
 

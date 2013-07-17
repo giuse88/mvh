@@ -39,7 +39,6 @@ void print_thread_group(const struct thread_group * group){
     print_thread_pair(&group->private);
 }
 
-
 // foir the time being I leave the server single thread 
 /*  // if the list is empty I initialize a new one*/
     /*if ( syncronisation_group_ == NULL) {*/
@@ -84,12 +83,31 @@ static void start_application( int fd) {
 // TODO refactoring this fucntion name overlaps with the function define in trusted_thread.c 
 int receive_syscall_header( int fd, struct syscall_header * header) { 
     int res = -1; 
-    memset(header, 0, SIZE_HEADER); 
-    INTR_RES(read(fd, header, SIZE_HEADER), res);
-    if ( res != SIZE_HEADER)
-        die("Failed receiving system call request"); 
-    return res; 
+    struct iovec io[1];
+    struct msghdr msg; 
+  
+    memset(header, 0, sizeof(header)); 
+    memset((void*)&msg, 0, sizeof(msg));  
+   
+    // set header 
+    io[0].iov_base = header; 
+    io[0].iov_len = SIZE_HEADER; 
+
+    msg.msg_iov=io; 
+    msg.msg_iovlen=1; 
+   
+    res = recvmsg(fd, &msg, 0);
+  
+    if( res < 0)
+       die("Error sending registers");
+
+   assert(res ==  (SIZE_HEADER));
+   
+   printf("Size header %d\n", res);
+
+   return res; 
 }
+
 void  * handle_thread_pair(void * arg) {
 
     int fds[NFDS]={0}; 
@@ -139,16 +157,16 @@ void  * handle_thread_pair(void * arg) {
     else if ( res < 0 )
         die("pool"); 
     // there must be at maximun two fd ready  
-  //  assert( res <= 2 ); 
+    assert( res <= 2 ); 
 
-    if (pollfds[PUBLIC_UNTRUSTED].revents) {
+    if ( !pub_req && pollfds[PUBLIC_UNTRUSTED].revents) {
         pub_req = true; 
         bytes_received = receive_syscall_header(fds[PUBLIC_UNTRUSTED], &public_header); 
         DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n", public_header.cookie, connection.public.untrusted.tid, 
                                                                                       syscall_names[public_header.syscall_num], fds[PUBLIC_UNTRUSTED]);
     }
 
-    if (pollfds[PRIVATE_UNTRUSTED].revents) {
+    if (!priv_req && pollfds[PRIVATE_UNTRUSTED].revents) {
         priv_req = true; 
         bytes_received = receive_syscall_header(fds[PRIVATE_UNTRUSTED], &private_header); 
         DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n", private_header.cookie, connection.private.untrusted.tid, 
@@ -156,7 +174,9 @@ void  * handle_thread_pair(void * arg) {
     }
 
    if(pub_req && priv_req) {
-         // we must call the handler 
+  
+        DPRINT(DEBUG_INFO, "Received an header pair\n");
+       // we must call the handler 
         assert( private_header.syscall_num ==  public_header.syscall_num);
         int syscall_num = private_header.syscall_num; 
         syscall_table_server_[syscall_num].handler(fds, pollfds, &public_header, &private_header); 
