@@ -39,23 +39,24 @@ void print_thread_group(const struct thread_group * group){
     print_thread_pair(&group->private);
 }
 
-// foir the time being I leave the server single thread 
-/*  // if the list is empty I initialize a new one*/
-    /*if ( syncronisation_group_ == NULL) {*/
-       /*syncronisation_group_ = malloc(sizeof( struct syncronisation_group));*/
-       /*memset(syncronisation_group_, 0 , sizeof( struct syncronisation_group));*/
-       /*INIT_LIST_HEAD(&syncronisation_group_->list);*/
-    /*} else {*/
-        /*// We are already dealing with some connection*/
-        /*// the connection starts always with an untrusted thread */
-        /*if ( info.type= UNTRUSTED_THREAD && (*/
+/* foir the time being I leave the server single thread 
+   if the list is empty I initialize a new one
+    if ( syncronisation_group_ == NULL) {
+       syncronisation_group_ = malloc(sizeof( struct syncronisation_group));
+       memset(syncronisation_group_, 0 , sizeof( struct syncronisation_group));
+       INIT_LIST_HEAD(&syncronisation_group_->list);
+    } else {
+         We are already dealing with some connection
+         the connection starts always with an untrusted thread 
+        if ( info.type= UNTRUSTED_THREAD && (
 
-    /*}*/
+    }
+*/ 
 
 struct thread_group * syncronisation_group_;
 struct thread_group connection;
 
-static int make_socket_non_blocking (int sfd){
+int make_socket_non_blocking (int sfd){
   int flags, s;
 
   flags = fcntl (sfd, F_GETFL, 0);
@@ -80,7 +81,6 @@ static void start_application( int fd) {
     if (res < COMMAND) 
           die("start process");
 }
-// TODO refactoring this fucntion name overlaps with the function define in trusted_thread.c 
 int receive_syscall_header( int fd, struct syscall_header * header) { 
     int res = -1; 
     struct iovec io[1];
@@ -102,9 +102,6 @@ int receive_syscall_header( int fd, struct syscall_header * header) {
        die("Error sending registers");
 
    assert(res ==  (SIZE_HEADER));
-   
-   printf("Size header %d\n", res);
-
    return res; 
 }
 

@@ -53,7 +53,15 @@ struct syscall_result {
 //default
 extern void trusted_default ( int fd, const struct syscall_header *); 
 extern u64_t untrusted_default(const ucontext_t *); 
+extern void no_handler(int, const struct syscall_header *); 
 
+//EXIT
 extern void trusted_exit_group( int, const struct syscall_header *);
+// default trusted 
+
+//OPEN
+extern u64_t untrusted_open (const ucontext_t * uc); 
+//default trusted 
+
 
 #endif /* end of include guard: HANDLER_H */

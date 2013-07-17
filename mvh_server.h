@@ -23,13 +23,27 @@ struct thread_pair {
 };    
 #define SIZE_THREAD_PAIR sizeof(struct thread_pair)
 
+
+typedef enum{EMPTY_FD=0, FILE_FD, SOCKED_FD} fd_type; 
+
+struct fd_pair{
+    fd_type type;
+    int private; 
+    int public; 
+}; 
+
+#define MAX_FD 10 
+
+// temporany 
 struct thread_group {
-    void * fd_maps; 
+    struct fd_pair fd_maps[MAX_FD]; 
     struct thread_pair public; 
     struct thread_pair private;
     struct list_head list; /* kernel's list structure */
 }; 
 #define SIZE_THREAD_GROUP sizeof(struct thread_group)
+
+
 
 extern struct thread_group connection;
 extern void run_mvh_server(int); 

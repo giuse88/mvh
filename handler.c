@@ -145,6 +145,9 @@ void trusted_default (int fd, const struct syscall_header *header){
             syscall_names[header->syscall_num]);
  
 }
+void no_handler (int fd, const struct syscall_header *header){
+  die("No handler has been called"); 
+}
 
 /*EXIT_GROUP */
 void trusted_exit_group( int fd, const struct syscall_header *header) {
@@ -173,18 +176,18 @@ void trusted_exit_group( int fd, const struct syscall_header *header) {
 /*EXIT*/
 
 /*OPEN*/
-u64_t open_untrusted(const ucontext_t * uc ){
+u64_t untrusted_open(const ucontext_t * uc ){
 
    struct syscall_registers regs; 
    struct syscall_result result; 
    int path_length = -1; 
    char * path = (char *)uc->uc_mcontext.gregs[REG_ARG0]; 
    u64_t extra =0;  
-   struct iovec io[IOV_OPEN];
+   struct iovec io[1];
    struct msghdr msg; 
    int sent =-1; 
 
-   DPRINT(DEBUG_INFO, " --  START OPEN HANDLER\n"); 
+   DPRINT(DEBUG_INFO, "--- START OPEN HANDLER\n"); 
   
    memset(&msg, 0, sizeof(msg));
    memset(&result, 0, SIZE_RESULT); 
@@ -192,30 +195,25 @@ u64_t open_untrusted(const ucontext_t * uc ){
    // the compiler should ensure there is a null after the last character
    path_length = strlen(path) + 1;
    extra = path_length; 
-
-   // IOV 0 register 
-   set_reg(&regs, uc); 
-   io[REG].iov_len=SIZE_REGISTERS; 
-   io[REG].iov_base=&regs; 
-   
+  
    // file path 
-   io[1].iov_len=path_length; 
-   io[1].iov_base = (char *)path; 
+   io[0].iov_len=path_length; 
+   io[0].iov_base = (char *)path; 
 
    msg.msg_iov=io; 
-   msg.msg_iovlen=IOV_OPEN; 
+   msg.msg_iovlen=1; 
 
    if (send_syscall_header(uc, extra)< 0)
        die("Send syscall header"); 
 
    sent = sendmsg(get_local_fd(), &msg, 0); 
-   assert(sent ==  SIZE_REGISTERS + path_length);
-  
+   assert(sent ==  path_length);
+   
    // wait for the result 
   if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result"); 
 
-  DPRINT(DEBUG_INFO, " -- END OPEN HANDLER\n"); 
+  DPRINT(DEBUG_INFO, "--- END OPEN HANDLER\n"); 
   return (u64_t)result.result; 
 }
 
@@ -223,23 +221,23 @@ u64_t open_untrusted(const ucontext_t * uc ){
 /*[> CLONE <] */
 /*u64_t clone_untrusted ( const ucontext_t * context) {*/
 
-   /*[>DPRINT(DEBUG_INFO, " --CLONE-- System call handler\n");*/ /*char *stack = (char *)req->arg1; <]*/
-   /*[>char *child_stack=stack; <]*/
-   /*[>void *dummy;<]*/
-   /*[>asm volatile( "mov %%rsp, %%rcx\n"<]*/
-                 /*[>"mov %3, %%rsp\n"<]*/
-                 /*[>"int $0\n"<]*/
-                 /*[>"mov %%rcx, %%rsp\n"<]*/
-                 /*[>: "=a"(stack), "=&c"(dummy)<]*/
-                 /*[>: "a"(__NR_clone + 0xF000), "m"(stack)<]*/
-                 /*[>: "memory");<]*/
+/*   DPRINT(DEBUG_INFO, " --CLONE-- System call handler\n"); char *stack = (char *)req->arg1; */
+   /*char *child_stack=stack; */
+   /*void *dummy;*/
+   /*asm volatile( "mov %%rsp, %%rcx\n"*/
+                 /*"mov %3, %%rsp\n"*/
+                 /*"int $0\n"*/
+                 /*"mov %%rcx, %%rsp\n"*/
+                 /*: "=a"(stack), "=&c"(dummy)*/
+                 /*: "a"(__NR_clone + 0xF000), "m"(stack)*/
+                 /*: "memory");*/
  
-   /*[>req->arg1=(long)stack;<]*/
-   /*[>ucontext_t * uc = (struct ucontext *)stack;<]*/
-   /*[>// copy state and signal mask of the untrusted process <]*/
-   /*[>memcpy(uc, context, sizeof(struct ucontext)); <]*/
-   /*[>uc->uc_mcontext.gregs[REG_RESULT]=0; <]*/
-   /*[>uc->uc_mcontext.gregs[REG_RSP]=(long)child_stack; <]*/
+   /*req->arg1=(long)stack;*/
+   /*ucontext_t * uc = (struct ucontext *)stack;*/
+    /*copy state and signal mask of the untrusted process */
+   /*memcpy(uc, context, sizeof(struct ucontext)); */
+   /*uc->uc_mcontext.gregs[REG_RESULT]=0; */
+   /*uc->uc_mcontext.gregs[REG_RSP]=(long)child_stack; */
 /*}*/
 /*void clone_trusted ( const syscall_request * request, int fd) {*/
   /*[>   if ( request.syscall_identifier == __NR_clone ) {<]*/

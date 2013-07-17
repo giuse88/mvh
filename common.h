@@ -14,6 +14,7 @@
 
 #define INTR(x) ({ int i__; while ((i__ = (x)) < 0 && errno == EINTR); i__;})
 #define INTR_RES(x,y) ({ int i__; y=0;  while ((i__ = (x)) < 0 && errno == EINTR){ y+=i__; }; y+=i__;})
+#define ASYNC_CALL(x,y) do { y=x; if (y < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) continue; else break; }while(1)
 
 #define ALWAYS 1
 #define OVERWRITE 1 

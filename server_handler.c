@@ -12,6 +12,15 @@
 #define DEFAULT_SERVER_HANDLER server_default
 struct server_handler * syscall_table_server_; 
 
+/*Wrong position */ 
+
+int get_free_fd() {
+    for (int i=0; i < MAX_FD; i++) 
+        if (connection.fd_maps[i].type == EMPTY_FD)
+            return i; 
+    return -1; 
+} 
+
 /* Useful functions */ 
 void  syscall_info(const struct  syscall_header * head, const struct syscall_registers *reg, const struct  syscall_result *res, process_visibility vis) {
     static bool first = true; 
@@ -114,6 +123,59 @@ size_t receive_syscall_result( int fd, struct syscall_result * res) {
     return received; 
 
 }
+size_t receive_syscall_result_async( int fd, struct syscall_result * res) {
+
+    struct iovec io[IOV_DEFAULT];
+    struct msghdr msg; 
+    int received =-1; 
+
+    memset(&msg, 0, sizeof(msg)); 
+
+    io[REG].iov_len=SIZE_RESULT; 
+    io[REG].iov_base=res; 
+    msg.msg_iov=io; 
+    msg.msg_iovlen=IOV_DEFAULT; 
+    
+    ASYNC_CALL(recvmsg(fd,&msg, 0), received); 
+    if ( received < 0) 
+        die("Sendmsg (Forward_syscall_request)"); 
+   
+    assert(received == SIZE_RESULT); 
+    return received; 
+
+}
+int get_extra_argument (int public, int private, char * public_path, char * private_path, size_t len) {
+    bool completed =false;
+    struct iovec io_pub[1], io_priv[1]; 
+    struct msghdr msg_pub, msg_priv;
+    int res_pub = -1, res_priv = -1;  
+
+    CLEAN_MSG(&msg_pub); 
+    CLEAN_MSG(&msg_priv); 
+    
+    // pub
+    io_pub[0].iov_len=len; 
+    io_pub[0].iov_base=public_path;  
+    msg_pub.msg_iov=io_pub; 
+    msg_pub.msg_iovlen=1; 
+    // priv
+    io_priv[0].iov_len=len; 
+    io_priv[0].iov_base=private_path;  
+    msg_priv.msg_iov=io_priv; 
+    msg_priv.msg_iovlen=1; 
+  
+    // it waits until there is data ( active wait) 
+    ASYNC_CALL(recvmsg(public,&msg_pub, 0), res_pub);   
+    if(res_pub < 0) 
+        die("Async recvms extra argument"); 
+    assert(res_pub == len);
+    ASYNC_CALL(recvmsg(private,&msg_priv, 0), res_priv); 
+    if(res_priv < 0) 
+        die("Async recvms extra argument"); 
+    assert(res_priv == len); 
+
+    return SUCCESS; 
+}
 
 /*************************** HANDLERS ******************************/ 
 /*DEFUALT*/
@@ -166,8 +228,7 @@ void server_default ( int fds[] ,struct pollfd pollfds[], const struct syscall_h
     }
 
  
-    /*//TODO I should also verify the cookie */
-   
+    /*//TODO I should also verify the cookie */ 
     
     if( pub_res && priv_res) {
         syscall_info(public, &public->regs, &public_result, PUBLIC); 
@@ -190,17 +251,79 @@ void server_default ( int fds[] ,struct pollfd pollfds[], const struct syscall_h
 }
 /*OPEN*/
 /*******************************************************************/ 
-
 void server_open ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private) {
 
-    DPRINT(DEBUG_INFO, "Open SYSTEM CALL"); 
+    char * public_path = NULL,* private_path = NULL; 
+    int length =-1; 
+    int res_pub, res_priv; 
+    struct syscall_result private_result, public_result; 
 
-    // Forward system call to the private version 
-    
-    // get the result 
+    DPRINT(DEBUG_INFO, "Open SYSTEM CALL\n"); 
+
+    /* Actions :
+     * Receives open structures 
+     * Forward system call to the private version 
+     * Save the result 
+     * send back the result to the untrusted threads 
+     */ 
+  
+   CLEAN_RES(&public_result); 
+   CLEAN_RES(&private_result); 
+
+   assert( public->syscall_num == __NR_open && private->syscall_num == __NR_open); 
+   assert( public->extra == private->extra); 
    
-    //send back the result to the untrusted threads 
+   length = public->extra; 
+   public_path = malloc(length); 
+   private_path = malloc(length); 
 
+   if (get_extra_argument(fds[PUBLIC_UNTRUSTED], fds[PRIVATE_UNTRUSTED],  public_path, private_path, length) < 0)
+        die("Failed get_path()"); 
+
+   if ( !strncmp(private_path, public_path, length) &&
+        public->regs.arg1 == private->regs.arg1)
+       DPRINT(DEBUG_INFO,"The system call arguments are equal\n");
+   else 
+       DPRINT(DEBUG_INFO," The arguments of open syscall are different (Possible attack)\n");
+
+  
+   // sends the request to the private application 
+  if(forward_syscall_request(fds[PRIVATE_TRUSTED], private) < 0)
+            die("failed send request public trusted thread");
+  
+  // gets system call results  
+  if(receive_syscall_result_async(fds[PRIVATE_TRUSTED], &private_result) < 0)  
+            die("failed receive system call result"); 
+
+  // send results to the untrusted thread private 
+  if(forward_syscall_result(fds[PRIVATE_UNTRUSTED], &private_result) < 0)
+        die("Failed send request public trusted thread");
+
+  srand(time(NULL)); 
+
+  public_result.cookie = public->cookie; 
+  public_result.result = rand() % 1000; 
+  public_result.extra  = 0; 
+
+  int index = get_free_fd(); 
+  connection.fd_maps[index].type = FILE_FD; 
+  connection.fd_maps[index].public = public_result.result; 
+  connection.fd_maps[index].private = private_result.result;
+
+  DPRINT(DEBUG_INFO, "Added fd to the to fd table %d = [%d:%d]\n",index, 
+              connection.fd_maps[index].private, connection.fd_maps[index].public); 
+
+  // send fake result to the untrusted public 
+  if(forward_syscall_result(fds[PUBLIC_UNTRUSTED], &public_result) < 0)
+           die("Failed send request public trusted thread");
+
+  printf("[PUBLIC]  open(%s, %lx) = %ld\n", public_path,  public->regs.arg1, public_result.result); 
+  printf("[PRIVATE] open(%s, %lx) = %ld\n", private_path, private->regs.arg1, private_result.result); 
+
+  free(public_path);
+  free(private_path); 
+
+  return; 
 } 
 
 /*EXIT GROUP*/
@@ -224,9 +347,9 @@ void initialize_server_handler() {
        void (*handler)(int [] , struct pollfd [] ,const struct syscall_header*,const struct  syscall_header *); 
    } default_policy [] = {
         /*server handler */
-      { __NR_exit_group,     server_exit_group }
+      { __NR_exit_group,     server_exit_group },
+      { __NR_open,           server_open },
    }; 
-
 
    syscall_table_server_ = (struct server_handler *)malloc( MAX_SYSTEM_CALL * (sizeof( struct server_handler))); 
 
