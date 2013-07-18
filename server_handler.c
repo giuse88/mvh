@@ -8,6 +8,7 @@
 #include "mvh_server.h" 
 #include "handler.h" 
 #include <pthread.h> 
+#include <sys/stat.h> 
 
 #define DEFAULT_SERVER_HANDLER server_default
 struct server_handler * syscall_table_server_; 
@@ -20,6 +21,18 @@ int get_free_fd() {
             return i; 
     return -1; 
 } 
+int get_public_fd( int private) {
+    for (int i=0; i < MAX_FD; i++) 
+        if (connection.fd_maps[i].private == private)
+            return connection.fd_maps[i].public; 
+    return -1; 
+}
+int get_private_fd( int public) {
+    for (int i=0; i < MAX_FD; i++) 
+        if (connection.fd_maps[i].public == public)
+            return connection.fd_maps[i].private; 
+    return -1; 
+}
 
 /* Useful functions */ 
 void  syscall_info(const struct  syscall_header * head, const struct syscall_registers *reg, const struct  syscall_result *res, process_visibility vis) {
@@ -37,7 +50,7 @@ void  syscall_info(const struct  syscall_header * head, const struct syscall_reg
              syscall_names[head->syscall_num], 
              reg->arg0,  reg->arg1,reg->arg2, reg->arg3,  reg->arg4, reg->arg5, res->result,ANSI_COLOR_RESET); 
 }
-size_t forward_syscall_request ( int fd, const struct syscall_header * header) {
+int forward_syscall_request ( int fd, const struct syscall_header * header) {
 
     struct msghdr msg; 
     struct iovec io[1];
@@ -46,7 +59,7 @@ size_t forward_syscall_request ( int fd, const struct syscall_header * header) {
     CLEAN_MSG(&msg);     
 
     io[0].iov_len=SIZE_HEADER; 
-    io[0].iov_base= header; 
+    io[0].iov_base= (char *)header; 
 
     msg.msg_iov=io; 
     msg.msg_iovlen=1; 
@@ -59,7 +72,7 @@ size_t forward_syscall_request ( int fd, const struct syscall_header * header) {
     return sent; 
 
 }
-size_t forward_syscall_result ( int fd, const struct syscall_result * result) {
+int forward_syscall_result ( int fd, const struct syscall_result * result) {
 
     struct msghdr msg; 
     struct iovec io[1];
@@ -68,7 +81,7 @@ size_t forward_syscall_result ( int fd, const struct syscall_result * result) {
     CLEAN_MSG(&msg);     
 
     io[0].iov_len=SIZE_RESULT; 
-    io[0].iov_base= result; 
+    io[0].iov_base= (char *)result; 
 
     msg.msg_iov=io; 
     msg.msg_iovlen=2; 
@@ -80,7 +93,7 @@ size_t forward_syscall_result ( int fd, const struct syscall_result * result) {
     return sent; 
 
 }
-size_t receive_syscall_registers ( int fd, struct syscall_registers * regs){
+int receive_syscall_registers ( int fd, struct syscall_registers * regs){
     struct iovec io[IOV_DEFAULT];
     struct msghdr msg; 
     int received =-1; 
@@ -101,7 +114,7 @@ size_t receive_syscall_registers ( int fd, struct syscall_registers * regs){
    
     return received; 
 }
-size_t receive_syscall_result( int fd, struct syscall_result * res) {
+int receive_syscall_result( int fd, struct syscall_result * res) {
 
     struct iovec io[IOV_DEFAULT];
     struct msghdr msg; 
@@ -123,7 +136,7 @@ size_t receive_syscall_result( int fd, struct syscall_result * res) {
     return received; 
 
 }
-size_t receive_syscall_result_async( int fd, struct syscall_result * res) {
+int receive_syscall_result_async( int fd, struct syscall_result * res) {
 
     struct iovec io[IOV_DEFAULT];
     struct msghdr msg; 
@@ -144,8 +157,7 @@ size_t receive_syscall_result_async( int fd, struct syscall_result * res) {
     return received; 
 
 }
-int get_extra_argument (int public, int private, char * public_path, char * private_path, size_t len) {
-    bool completed =false;
+int get_extra_argument (int public, int private, char * public_path, char * private_path, int len) {
     struct iovec io_pub[1], io_priv[1]; 
     struct msghdr msg_pub, msg_priv;
     int res_pub = -1, res_priv = -1;  
@@ -181,12 +193,10 @@ int get_extra_argument (int public, int private, char * public_path, char * priv
 /*DEFUALT*/
 void server_default ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private) { 
  
-    int bytes_received=-1; 
-    struct syscall_registers public_regs, private_regs; 
+    /*int bytes_received=-1; */
     struct syscall_result public_result, private_result; 
-
-    bool pub_req=false, pub_res=false; 
-    bool priv_req=false, priv_res=false; 
+    bool pub_res=false; 
+    bool priv_res=false; 
     int res =-1; 
     bool completed=false; 
 
@@ -217,13 +227,13 @@ void server_default ( int fds[] ,struct pollfd pollfds[], const struct syscall_h
 
    if (pollfds[PUBLIC_TRUSTED].revents) {
         pub_res=true; 
-        bytes_received = receive_syscall_result(fds[PUBLIC_TRUSTED], &public_result); 
+        receive_syscall_result(fds[PUBLIC_TRUSTED], &public_result); 
         DPRINT(DEBUG_INFO, "Received result for %d from %d over %d\n", public_result.cookie, connection.public.trusted.tid,fds[PUBLIC_TRUSTED]);
       }
 
     if (pollfds[PRIVATE_TRUSTED].revents) {
         priv_res = true; 
-        bytes_received = receive_syscall_result(fds[PRIVATE_TRUSTED], &private_result); 
+        receive_syscall_result(fds[PRIVATE_TRUSTED], &private_result);
         DPRINT(DEBUG_INFO, "Received result for %d from %d over %d\n", private_result.cookie, connection.private.trusted.tid,fds[PRIVATE_TRUSTED]);
     }
 
@@ -249,13 +259,11 @@ void server_default ( int fds[] ,struct pollfd pollfds[], const struct syscall_h
 
     return; 
 }
-/*OPEN*/
-/*******************************************************************/ 
+
 void server_open ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private) {
 
     char * public_path = NULL,* private_path = NULL; 
     int length =-1; 
-    int res_pub, res_priv; 
     struct syscall_result private_result, public_result; 
 
     DPRINT(DEBUG_INFO, "Open SYSTEM CALL\n"); 
@@ -317,14 +325,81 @@ void server_open ( int fds[] ,struct pollfd pollfds[], const struct syscall_head
   if(forward_syscall_result(fds[PUBLIC_UNTRUSTED], &public_result) < 0)
            die("Failed send request public trusted thread");
 
-  printf("[PUBLIC]  open(%s, %lx) = %ld\n", public_path,  public->regs.arg1, public_result.result); 
-  printf("[PRIVATE] open(%s, %lx) = %ld\n", private_path, private->regs.arg1, private_result.result); 
+  printf("[ PUBLIC  ]  open(%s, %lx) = %ld\n", public_path,  public->regs.arg1, public_result.result); 
+  printf("[ PRIVATE ] open(%s, %lx) = %ld\n", private_path, private->regs.arg1, private_result.result); 
 
   free(public_path);
   free(private_path); 
 
   return; 
 } 
+
+void server_fstat ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private){
+
+    struct syscall_result result; 
+    struct stat res_fstat; 
+
+    DPRINT(DEBUG_INFO, "Start fstat handler\n"); 
+
+    // sanity checks 
+    assert( public->syscall_num == __NR_fstat  && private->syscall_num == __NR_fstat); 
+    assert( get_private_fd(public->regs.arg0) == (int)private->regs.arg0); 
+    assert( get_public_fd(private->regs.arg0) == (int)public->regs.arg0); 
+    
+    /* ACTIONS  
+     * Send request to the private version 
+     * get the result and the fstat structure from the private trusted thread 
+     * send back a normal result to the private version 
+     * send back the result and the stat structure to the pucliv untrusted
+     * No handler are need for the trusted public thread 
+     */ 
+
+    CLEAN_RES(&result); 
+    memset(&res_fstat, 0, sizeof(res_fstat)); 
+
+    // sends the request to the private application 
+    if(forward_syscall_request(fds[PRIVATE_TRUSTED], private) < 0)
+            die("failed send request public trusted thread");
+  
+   // gets system call result and the fstat struct from the memory space of the private 
+   // truste thread 
+    struct iovec io[2];
+    struct msghdr msg; 
+    int transfered=-1; 
+
+    memset(&msg, 0, sizeof(msg));
+    memset(io, 0, sizeof(io)); 
+    
+    // result header 
+    io[0].iov_len=SIZE_RESULT; 
+    io[0].iov_base=&result;
+    // result fstat
+    io[1].iov_len = sizeof(struct stat); 
+    io[1].iov_base = &res_fstat; 
+    // IOV struct 
+    msg.msg_iov=io;
+    msg.msg_iovlen=2; 
+ 
+    ASYNC_CALL(recvmsg(fds[PRIVATE_TRUSTED],&msg, 0), transfered); 
+    if ( transfered < 0) 
+        die("Recvmsg (Fstat handler)"); 
+   
+    assert(transfered == SIZE_RESULT +sizeof(struct stat)); 
+   
+   // send results to the untrusted thread private  
+    if(forward_syscall_result(fds[PRIVATE_UNTRUSTED], &result) < 0)
+        die("Failed send request public trusted thread");
+
+    result.cookie = public->cookie; 
+    // send result header along with the fsstat to the public trusted process 
+    transfered = sendmsg(fds[PUBLIC_UNTRUSTED], &msg, 0);
+    assert(transfered == SIZE_RESULT +sizeof(struct stat)); 
+
+    printf("[ PUBLIC  ] fstat(%ld, %lx) = %ld\n", public->regs.arg0,  public->regs.arg1, result.result); 
+    printf("[ PRIVATE ] fstat(%ld, %lx) = %ld\n", private->regs.arg0, private->regs.arg1, result.result); 
+
+    return; 
+}
 
 /*EXIT GROUP*/
 void server_exit_group ( int fds[] ,struct pollfd poolfds[], const struct syscall_header * public , const struct syscall_header * private) {
@@ -349,6 +424,7 @@ void initialize_server_handler() {
         /*server handler */
       { __NR_exit_group,     server_exit_group },
       { __NR_open,           server_open },
+      { __NR_fstat,          server_fstat},
    }; 
 
    syscall_table_server_ = (struct server_handler *)malloc( MAX_SYSTEM_CALL * (sizeof( struct server_handler))); 

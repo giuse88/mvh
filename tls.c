@@ -1,14 +1,18 @@
+#define _GNU_SOURCE 1 
+
 #include "tls.h"
 #include <asm/ldt.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <asm/prctl.h>
+#include <sys/syscall.h> 
+#include <unistd.h> 
 
 void * install_tls() {
   void *addr = mmap(0, 4096, PROT_READ|PROT_WRITE,
                        MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  if (arch_prctl(ARCH_SET_GS, addr) < 0) 
+  if (syscall(SYS_arch_prctl,ARCH_SET_GS, addr) < 0) 
       return NULL;
     
    return addr;
@@ -16,7 +20,7 @@ void * install_tls() {
 
 void freeTLS() {
     void *addr;
-    arch_prctl(ARCH_GET_GS, &addr);
+    syscall(SYS_arch_prctl,ARCH_GET_GS, &addr);  
     munmap(addr, 4096);
 }
 

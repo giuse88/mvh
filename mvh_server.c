@@ -140,7 +140,6 @@ void  * handle_thread_pair(void * arg) {
     
     do {
  
-    int bytes_received=-1; 
     struct syscall_header private_header, public_header; 
 
     /* 
@@ -158,14 +157,14 @@ void  * handle_thread_pair(void * arg) {
 
     if ( !pub_req && pollfds[PUBLIC_UNTRUSTED].revents) {
         pub_req = true; 
-        bytes_received = receive_syscall_header(fds[PUBLIC_UNTRUSTED], &public_header); 
+        receive_syscall_header(fds[PUBLIC_UNTRUSTED], &public_header); 
         DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n", public_header.cookie, connection.public.untrusted.tid, 
                                                                                       syscall_names[public_header.syscall_num], fds[PUBLIC_UNTRUSTED]);
     }
 
     if (!priv_req && pollfds[PRIVATE_UNTRUSTED].revents) {
         priv_req = true; 
-        bytes_received = receive_syscall_header(fds[PRIVATE_UNTRUSTED], &private_header); 
+        receive_syscall_header(fds[PRIVATE_UNTRUSTED], &private_header); 
         DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n", private_header.cookie, connection.private.untrusted.tid, 
                                                                                       syscall_names[private_header.syscall_num], fds[PRIVATE_UNTRUSTED]);
     }
@@ -217,13 +216,12 @@ void handle_connection(int sockfd)
     struct thread_info info;
     int bytes_transfered = -1; 
     char buf[ACKNOWLEDGE]={0}; 
-    int i; 
     pthread_t tid; 
 
     // get information about the untrusted process; 
     INTR_RES(read(sockfd, (char *)&info, sizeof(info)), bytes_transfered); 
 
-    if (bytes_transfered < sizeof(info))
+    if (bytes_transfered < (int)sizeof(info))
         die("Read (thread info)"); 
 
     print_thread_info(&info, sockfd); 

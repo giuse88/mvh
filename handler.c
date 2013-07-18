@@ -16,8 +16,6 @@
 #include <arpa/inet.h> 
 #include <sys/syscall.h>
 #include <assert.h> 
-#include <sys/syscall.h> 
-
 
 int receive_syscall_result (struct syscall_result * res){
     int received;
@@ -44,7 +42,7 @@ ssize_t send_syscall_header(const ucontext_t * uc, int extra) {
 
     struct syscall_header header; 
     int fd = get_local_fd();
-    size_t sent=-1; 
+    int sent=-1; 
     struct iovec io[1];
     struct msghdr msg; 
   
@@ -105,12 +103,11 @@ u64_t untrusted_default(const ucontext_t *ctx ){
    
     int syscall_num = -1; 
     struct syscall_result result;
-    int sent=-1; 
     u64_t extra = 0;  
    
     syscall_num = ctx->uc_mcontext.gregs[REG_SYSCALL]; 
     
-    DPRINT(DEBUG_INFO, "Start DEFAULT handler for < %s > \n", syscall_names[syscall_num]);
+    DPRINT(DEBUG_INFO, "DEFAULT Start untrusted handler for < %s > \n", syscall_names[syscall_num]);
    
     if (send_syscall_header(ctx, extra) < 0)
         die("Failed to send syscall_header"); 
@@ -118,7 +115,7 @@ u64_t untrusted_default(const ucontext_t *ctx ){
     if(receive_syscall_result(&result) < 0 )
        die("Failed recieve_syscall_result"); 
 
-    DPRINT(DEBUG_INFO, " End DEFAULT handler for < %s > \n", syscall_names[syscall_num]);
+    DPRINT(DEBUG_INFO, "DEFAULT End   untrusted handler for < %s > \n", syscall_names[syscall_num]);
     return (u64_t)result.result; 
 }
 void trusted_default (int fd, const struct syscall_header *header){
@@ -149,6 +146,7 @@ void no_handler (int fd, const struct syscall_header *header){
   die("No handler has been called"); 
 }
 
+
 /*EXIT_GROUP */
 void trusted_exit_group( int fd, const struct syscall_header *header) {
   
@@ -178,7 +176,6 @@ void trusted_exit_group( int fd, const struct syscall_header *header) {
 /*OPEN*/
 u64_t untrusted_open(const ucontext_t * uc ){
 
-   struct syscall_registers regs; 
    struct syscall_result result; 
    int path_length = -1; 
    char * path = (char *)uc->uc_mcontext.gregs[REG_ARG0]; 
@@ -215,6 +212,95 @@ u64_t untrusted_open(const ucontext_t * uc ){
 
   DPRINT(DEBUG_INFO, "--- END OPEN HANDLER\n"); 
   return (u64_t)result.result; 
+}
+
+/* FSSTAT 
+ * int fstat(int fd, struct stat *buf);
+ */ 
+u64_t untrusted_fstat(const ucontext_t * uc ){
+
+  struct iovec io[2];
+  struct msghdr msg; 
+  int received =-1; 
+  struct syscall_result res; 
+  int fd = get_local_fd(); 
+  int cookie = get_local_tid(); 
+  u64_t extra =0;  
+  
+  DPRINT(DEBUG_INFO, "--- FSTAT Start untrusted handler\n"); 
+
+  if (send_syscall_header(uc, extra)< 0)
+       die("Send syscall header"); 
+
+   // it receives the result header plus the struct fstat 
+   // whihc has to be conpied in the correct memory position 
+  CLEAN_MSG(&msg); 
+  CLEAN_RES(&res); 
+
+  io[0].iov_len = SIZE_RESULT; 
+  io[0].iov_base = &res; 
+
+  // update the value
+  io[1].iov_len  = sizeof(struct stat); 
+  io[1].iov_base = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
+
+  msg.msg_iov=io;     
+  msg.msg_iovlen=2; 
+
+  INTR_RES(recvmsg(fd, &msg,0), received); 
+ 
+  if ( received < 0) 
+      die("Recvmsg failed result stat"); 
+
+  assert(res.cookie == cookie); 
+  assert(received == SIZE_RESULT + sizeof( struct stat)); 
+
+  DPRINT(DEBUG_INFO, "--- FSTAT End   untrusted handler\n"); 
+  return (u64_t)res.result; 
+}
+void  trusted_fstat   ( int fd, const struct syscall_header * header) {
+
+  struct syscall_result result; 
+  struct syscall_request request;
+
+  CLEAN_RES(&result); 
+  CLEAN_REQ(&request); 
+
+  DPRINT(DEBUG_INFO, ">>> FSTAT Start trusted handler\n");
+
+  assert(header->syscall_num == __NR_fstat); 
+  request.syscall_identifier = header->syscall_num; 
+  memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
+  
+  result.result = do_syscall(&request);
+  result.cookie = header->cookie; 
+  result.extra = 0; 
+
+  // send results with the struct as well 
+  struct iovec io[2];
+  struct msghdr msg; 
+  int transfered=-1; 
+
+  CLEAN_MSG(&msg);
+  memset(io, 0, sizeof(io)); 
+    
+  // result header 
+  io[0].iov_len=SIZE_RESULT; 
+  io[0].iov_base=&result;
+  // result fstat
+  io[1].iov_len = sizeof(struct stat); 
+  io[1].iov_base = (char *)header->regs.arg1; 
+    // IOV struct 
+  msg.msg_iov=io;
+  msg.msg_iovlen=2; 
+ 
+  transfered=sendmsg(fd,&msg, 0); 
+  if ( transfered < 0) 
+      die("Recvmsg (Fstat handler)"); 
+  assert(transfered == SIZE_RESULT +sizeof(struct stat)); 
+  
+  DPRINT(DEBUG_INFO, ">>> FSTAT End   trusted handler\n");
+  return; 
 }
 
 

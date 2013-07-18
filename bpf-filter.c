@@ -58,7 +58,7 @@ void emulator(int nr, siginfo_t  *info, void *void_context)
 
   ctx->uc_mcontext.gregs[REG_RESULT] = syscall_table_[syscallNum].handler_untrusted(ctx);
 
-  DPRINT(DEBUG_INFO, "== [%d] End emulation of %s\n", tid,syscall_names[syscallNum]);
+  DPRINT(DEBUG_INFO, "== [%d] End emulation of %s\n\n", tid,syscall_names[syscallNum]);
   return;
 }
 int install_filter(int fd){
