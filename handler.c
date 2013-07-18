@@ -4,6 +4,7 @@
 #include "sandbox.h"
 #include "bpf-filter.h"
 #include "trusted_thread.h"
+#include "utils.h"
 
 #include <sys/mman.h> 
 #include <sys/syscall.h> 
@@ -302,6 +303,67 @@ void  trusted_fstat   ( int fd, const struct syscall_header * header) {
   DPRINT(DEBUG_INFO, ">>> FSTAT End   trusted handler\n");
   return; 
 }
+
+/** MMAP
+    #include <sys/mman.h>
+    void *mmap(void *addr, size_t length, int prot, int flags,int fd, off_t offset);
+    int munmap(void *addr, size_t length)
+ **/ 
+extern u64_t untrusted_mmap (const ucontext_t * uc) {
+  
+  struct syscall_result res; 
+  int fd = get_local_fd(); 
+  u64_t extra =0;  
+  char * buf = NULL;  
+  int buf_size =  uc->uc_mcontext.gregs[REG_ARG1];
+
+  DPRINT(DEBUG_INFO, "--- MMPA Start untrusted handler\n"); 
+  
+  if (send_syscall_header(uc, extra)< 0)
+          die("Send syscall header"); 
+  // I cannot know the address returned by mmap
+  if (receive_syscall_result(&res) < 0)
+        die("Error reading result from mmap"); 
+  buf = (char *)res.result; 
+ 
+  fpritnf(stderr, "%x %p", res.result, buf); 
+
+  if (receive_extra_result(fd, buf, buf_size) < 0)
+      die("Error receive extra result MMAP"); 
+
+  DPRINT(DEBUG_INFO, "--- MMPA End   untrusted handler\n");
+
+  return (u64_t)res.result; 
+  
+}
+extern void  trusted_mmap   ( int fd, const struct syscall_header * header) {
+
+  struct syscall_result result; 
+  struct syscall_request request;
+
+  CLEAN_RES(&result); 
+  CLEAN_REQ(&request); 
+
+  DPRINT(DEBUG_INFO, ">>> MMPA Start trusted handler\n");
+  
+  assert(header->syscall_num == __NR_mmap); 
+  request.syscall_identifier = header->syscall_num; 
+  memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
+  
+  result.result = do_syscall(&request);
+  result.cookie = header->cookie; 
+  result.extra = 0; 
+
+  char * buf = (char *)result.result; 
+  int   map_size = header->regs.arg1; 
+
+  printf("cookie %d\n", result.cookie); 
+  send_result_with_extra(fd, &result, map_size, buf);  
+  printf("cookie %d\n", result.cookie); 
+  DPRINT(DEBUG_INFO, ">>> MMPA End   trusted handler\n");
+
+};
+
 
 
 /*[> CLONE <] */
