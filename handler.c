@@ -237,6 +237,9 @@ u64_t untrusted_fstat(const ucontext_t * uc ){
   
   DPRINT(DEBUG_INFO, "--- FSTAT Start untrusted handler\n"); 
 
+  if (IS_STD_FD(uc->uc_mcontext.gregs[REG_ARG0]))
+      return untrusted_default(uc); 
+
   if (send_syscall_header(uc, extra)< 0)
        die("Send syscall header"); 
 
@@ -277,6 +280,12 @@ void  trusted_fstat   ( int fd, const struct syscall_header * header) {
   DPRINT(DEBUG_INFO, ">>> FSTAT Start trusted handler\n");
 
   assert(header->syscall_num == __NR_fstat); 
+
+  if (IS_STD_FD(header->regs.arg0)) {
+      trusted_default(fd, header); 
+      return; 
+  }
+
   request.syscall_identifier = header->syscall_num; 
   memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
   
@@ -447,7 +456,7 @@ u64_t untrusted_getdents(const ucontext_t * uc ){
   if ( (received = receive_result_with_extra(fd, &res, buf, size)) < 0)
       die("Recvmsg failed result stat"); 
 
-  assert(received == SIZE_RESULT + size); 
+  assert(received == (int)(SIZE_RESULT + size)); 
   assert(res.cookie == cookie); 
 
   UNTRUSTED_END("GETDENTS"); 
@@ -477,7 +486,7 @@ void  trusted_getdents   ( int fd, const struct syscall_header * header) {
   if ( transfered < 0) 
       die("Recvmsg (Fstat handler)"); 
  
-  assert(transfered == SIZE_RESULT + header->regs.arg2); 
+  assert(transfered == (ssize_t)(SIZE_RESULT + header->regs.arg2)); 
   
   DPRINT(DEBUG_INFO, ">>> FSTAT End   trusted handler\n");
   return; 

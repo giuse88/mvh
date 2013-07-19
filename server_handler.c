@@ -18,6 +18,10 @@ struct server_handler * syscall_table_server_;
 
 #define ATTACK printf("ATTACK")
 
+#define IS_STD_FD(arg) ( ( arg == STDOUT_FILENO) || \
+                         ( arg == STDERR_FILENO) || \
+                         ( arg ==  STDIN_FILENO) )
+
 /*Wrong position */ 
 int get_free_fd() {
     for (int i=0; i < MAX_FD; i++) 
@@ -353,9 +357,22 @@ void server_fstat ( int fds[] ,struct pollfd pollfds[], const struct syscall_hea
 
     // sanity checks 
     assert( public->syscall_num == __NR_fstat  && private->syscall_num == __NR_fstat); 
-    assert( get_private_fd(public->regs.arg0) == (int)private->regs.arg0); 
-    assert( get_public_fd(private->regs.arg0) == (int)public->regs.arg0); 
     
+
+    if ( public->regs.arg0 == private->regs.arg0 && 
+         IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
+         DPRINT(DEBUG_INFO, "Fstat invoked with default file descriptor\n"); 
+         server_default(fds, pollfds, public, private);
+         return;
+    } 
+    
+    if ((get_private_fd(public->regs.arg0) == (int)private->regs.arg0) && 
+        (get_public_fd(private->regs.arg0) == (int)public->regs.arg0))
+        printf("FSTAT syscall verified"); 
+    else 
+        printf("Fstat verification failed"); 
+
+
     /* ACTIONS  
      * Send request to the private version 
      * get the result and the fstat structure from the private trusted thread 
