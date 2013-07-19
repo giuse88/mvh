@@ -18,6 +18,11 @@
 #include <sys/syscall.h>
 #include <assert.h> 
 
+
+
+#define UNTRUSTED_START(arg) DPRINT(DEBUG_INFO, "--- %s Start untrusted handler\n", arg); 
+#define UNTRUSTED_END(arg)   DPRINT(DEBUG_INFO, "--- %s End   untrusted handler\n", arg); 
+
 int receive_syscall_result (struct syscall_result * res){
     int received;
     int fd = get_local_fd(); 
@@ -309,9 +314,8 @@ void  trusted_fstat   ( int fd, const struct syscall_header * header) {
     void *mmap(void *addr, size_t length, int prot, int flags,int fd, off_t offset);
     int munmap(void *addr, size_t length)
  **/ 
-extern u64_t untrusted_mmap (const ucontext_t * uc) {
+u64_t untrusted_mmap (const ucontext_t * uc) {
     
-    int syscall_num = -1; 
     struct syscall_result result;
     u64_t extra = 0;  
     int transfered =-1, size =-1; 
@@ -333,7 +337,7 @@ extern u64_t untrusted_mmap (const ucontext_t * uc) {
 
     memset(buf, 0, size); 
 
-    if((transfered=receive_extra_result(get_local_fd(), buf, size))< 0 ) 
+    if((transfered=receive_extra(get_local_fd(), buf, size))< 0 ) 
             die("Failed extra result"); 
 
     DPRINT(DEBUG_INFO, "Transfered data %d \n", transfered);
@@ -341,7 +345,7 @@ extern u64_t untrusted_mmap (const ucontext_t * uc) {
     return (u64_t)result.result; 
   
 }
-extern void  trusted_mmap   ( int fd, const struct syscall_header * header) {
+void  trusted_mmap   ( int fd, const struct syscall_header * header) {
 
   struct syscall_result result; 
   struct syscall_request request;
@@ -369,6 +373,51 @@ extern void  trusted_mmap   ( int fd, const struct syscall_header * header) {
   DPRINT(DEBUG_INFO, ">>> MMPA End   trusted handler\n");
 
 };
+
+/** OPENAT
+  #include <fcntl.h>
+  int openat(int dirfd, const char *pathname, int flags);
+  int openat(int dirfd, const char *pathname, int flags, mode_t mode);
+*/ 
+
+u64_t untrusted_openat(const ucontext_t * uc ){
+
+   struct syscall_result result; 
+   int path_length = -1; 
+   char * path = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
+   u64_t extra =0;  
+   int sent =-1; 
+   struct iovec io[1];
+   struct msghdr msg; 
+
+   UNTRUSTED_START("OPENAT"); 
+  
+   memset(&msg, 0, sizeof(msg));
+   memset(&result, 0, SIZE_RESULT); 
+
+   // the compiler should ensure there is a null after the last character
+   path_length = strlen(path) + 1;
+   extra = path_length; 
+  
+   if (send_syscall_header(uc, extra)< 0)
+      die("Send syscall header"); 
+  
+   // file path 
+   io[0].iov_len=path_length; 
+   io[0].iov_base = (char *)path; 
+
+   msg.msg_iov=io; 
+   msg.msg_iovlen=1; 
+
+   sent = sendmsg(get_local_fd(), &msg, 0); 
+   assert(sent ==  path_length);
+  
+   if(receive_syscall_result(&result) < 0 )
+       die("Failede get_syscall_result"); 
+
+  UNTRUSTED_END("OPENAT"); 
+  return (u64_t)result.result; 
+}
 
 
 

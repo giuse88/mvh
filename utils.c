@@ -66,8 +66,7 @@ int send_result_with_extra(int fd, struct syscall_result * result, int extra_siz
 
     return transfered; 
 }
-
-ssize_t receive_extra_result(int fd , char * buf, size_t size){
+ssize_t receive_extra(int fd , char * buf, size_t size){
  
     int left = 0, transfered=0, temp=0; 
     char * ptr = NULL; 
@@ -92,8 +91,7 @@ ssize_t receive_extra_result(int fd , char * buf, size_t size){
     return transfered; 
 
 } 
-
-ssize_t send_extra_result  (int fd, char * buf, size_t size) {
+ssize_t send_extra  (int fd, char * buf, size_t size) {
 
     int left = 0, transfered=0, temp=0; 
     char * ptr = NULL; 
