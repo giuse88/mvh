@@ -719,6 +719,69 @@ void server_exit_group ( int fds[] ,struct pollfd poolfds[], const struct syscal
 
 }
 
+void server_write ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+    char *private_buf =NULL, *public_buf=NULL;
+    size_t size =0; 
+    bool buffer_match = false; 
+
+    DPRINT(DEBUG_INFO, "WRITE SYSTEM CALL\n"); 
+
+    CLEAN_RES(&result); 
+
+    assert( public->syscall_num == __NR_write && private->syscall_num == __NR_write); 
+    assert( public->regs.arg2 == private->regs.arg2); 
+
+    size = public->regs.arg2; 
+    public_buf   = malloc(size); 
+    private_buf  = malloc(size); 
+    get_extra_arguments(fds[PUBLIC_UNTRUSTED],public_buf, fds[PRIVATE_UNTRUSTED], private_buf, size); 
+
+    printf("ddd"); 
+
+    buffer_match = memcpy(public_buf, private_buf, size)? false : true; 
+
+    if ( ( public->regs.arg0 == private->regs.arg0) && 
+         ( public->regs.arg2 == private->regs.arg2) && buffer_match && 
+         IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
+            printf("Write system call verified!");  
+            DPRINT(DEBUG_INFO, "WRITE invoked with default file descriptor\n"); 
+            server_default(fds, pollfds, public, private);
+            return;
+    } 
+ 
+    if ((get_private_fd(public->regs.arg0) == (int)private->regs.arg0) && 
+        (get_public_fd(private->regs.arg0) == (int)public->regs.arg0)  &&
+         ( public->regs.arg2 == private->regs.arg2) && buffer_match )
+         printf("Write system call verified!");  
+    else 
+        printf("Write verification failed"); 
+
+ 
+    // sends the request to the private application 
+    if(forward_syscall_request(fds[PRIVATE_TRUSTED], private) < 0)
+            die("failed send request public trusted thread");
+
+    // gets system call results  
+    if(receive_syscall_result_async(fds[PRIVATE_TRUSTED], &result) < 0)  
+            die("failed receive system call result"); 
+
+       // send results to the untrusted thread private  
+    if(forward_syscall_result(fds[PRIVATE_UNTRUSTED], &result) < 0)
+        die("Failed send request private untrusted thread");
+
+    result.cookie = public->cookie; 
+    
+    if(forward_syscall_result(fds[PUBLIC_UNTRUSTED], &result) < 0)
+        die("Failed send request public untrusted thread");
+
+    printf("[ PUBLIC  ] write(%ld, %lx, %ld) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); 
+    printf("[ PRIVATE ] write(%ld, %lx, %ld) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
+
+    return; 
+}
+
 /************** INSTALL SERVER HANDLER *****************************/ 
 void initialize_server_handler() { 
 
@@ -734,6 +797,7 @@ void initialize_server_handler() {
       { __NR_getdents,       server_getdents   },
       { __NR_mmap,           server_mmap       },
       { __NR_close,          server_close      },
+      { __NR_write,          server_write      },
 
    }; 
 

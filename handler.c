@@ -516,8 +516,8 @@ u64_t untrusted_write(const ucontext_t * uc ){
  
    UNTRUSTED_START("WRITE");
 
-   if (IS_STD_FD(uc->uc_mcontext.gregs[REG_ARG0]))
-      return untrusted_default(uc); 
+   /*if (IS_STD_FD(uc->uc_mcontext.gregs[REG_ARG0]))*/
+      /*return untrusted_default(uc); */
 
    CLEAN_RES(&result); 
 
@@ -530,13 +530,17 @@ u64_t untrusted_write(const ucontext_t * uc ){
   
    if (send_extra(get_local_fd(), buf, size) < 0) 
        die("Failed send extra (Untrudted write)"); 
-   
+  
+   DPRINT(DEBUG_INFO, "Sent data"); 
+
    if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result"); 
 
    UNTRUSTED_END("WRITE"); 
    return (u64_t)result.result; 
 }
+
+
 
 /*[> CLONE <] */
 /*u64_t clone_untrusted ( const ucontext_t * context) {*/

@@ -115,5 +115,14 @@ ssize_t send_extra  (int fd, char * buf, size_t size) {
     assert(transfered == (int)size);
     return transfered; 
 } 
+void get_extra_arguments( int pub_fd , char* pub_buf, int priv_fd, char * priv_buf, size_t size){
+    ssize_t received =0; 
 
-
+    if ((received=receive_extra(pub_fd, pub_buf,size)) < 0)
+          die("Failed receiveing extra argument from public application"); 
+    assert((size_t)received == size);
+    received=0; 
+    if ((received =receive_extra(priv_fd, priv_buf,size)) < 0)
+          die("Failed receiveing extra argument from private application"); 
+    assert((size_t)received == size);
+}
