@@ -537,6 +537,76 @@ u64_t untrusted_write(const ucontext_t * uc ){
    return (u64_t)result.result; 
 }
 
+u64_t untrusted_read(const ucontext_t * uc ){
+
+  ssize_t received =0; 
+  struct syscall_result res; 
+  int fd = get_local_fd(); 
+  int cookie = get_local_tid(); 
+  u64_t extra =0;  
+  char * buf = NULL; 
+  size_t size =0; 
+
+  UNTRUSTED_START("READ"); 
+
+  if (IS_STD_FD(uc->uc_mcontext.gregs[REG_ARG0]))
+      return untrusted_default(uc); 
+
+  CLEAN_RES(&res); 
+  
+  if (send_syscall_header(uc, extra)< 0)
+       die("Send syscall header"); 
+
+  buf  = uc->uc_mcontext.gregs[REG_ARG1]; 
+  size = uc->uc_mcontext.gregs[REG_ARG2]; 
+  received= receive_result_with_extra(fd, &res, buf, size); 
+
+  if ( received < 0) 
+      die("Recvmsg failed result stat"); 
+
+  assert(res.cookie == cookie); 
+  assert((size_t)received == (SIZE_RESULT + size)); 
+  
+  UNTRUSTED_END("READ"); 
+
+  return (u64_t)res.result; 
+}
+void  trusted_read  ( int fd, const struct syscall_header * header) {
+
+  struct syscall_result result; 
+  struct syscall_request request;
+  ssize_t transfered =0; 
+
+  TRUSTED_START("READ"); 
+
+  CLEAN_RES(&result); 
+  CLEAN_REQ(&request); 
+
+  assert(header->syscall_num == __NR_read); 
+
+  if (IS_STD_FD(header->regs.arg0)) {
+      trusted_default(fd, header); 
+      return; 
+  }
+
+  request.syscall_identifier = header->syscall_num; 
+  memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
+  
+  result.result = do_syscall(&request);
+  result.cookie = header->cookie; 
+  result.extra = 0; 
+
+  transfered =send_result_with_extra(fd, &result, (char *)header->regs.arg1, header->regs.arg2);  
+  if ( transfered < 0) 
+      die("Recvmsg (Fstat handler)"); 
+  
+  assert((size_t)transfered == (SIZE_RESULT + header->regs.arg2)); 
+  
+  TRUSTED_END("READ"); 
+
+  return; 
+}
+
 
 
 /*[> CLONE <] */

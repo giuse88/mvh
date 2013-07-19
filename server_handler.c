@@ -18,10 +18,6 @@ struct server_handler * syscall_table_server_;
 
 #define ATTACK printf("ATTACK")
 
-#define IS_STD_FD(arg) ( ( arg == STDOUT_FILENO) || \
-                         ( arg == STDERR_FILENO) || \
-                         ( arg ==  STDIN_FILENO) )
-
 /*Wrong position */ 
 int get_free_fd() {
     for (int i=0; i < MAX_FD; i++) 
@@ -206,7 +202,6 @@ int get_extra_argument (int public, int private, char * public_path, char * priv
 }
 
 /*************************** HANDLERS ******************************/ 
-/*DEFUALT*/
 void server_default ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private) { 
  
     /*int bytes_received=-1; */
@@ -545,15 +540,15 @@ void server_close ( int fds[] ,struct pollfd pollfds[], const struct syscall_hea
 
     if ( public->regs.arg0 == private->regs.arg0 && 
          IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
-         printf("Clone system call verified!");  
-         DPRINT(DEBUG_INFO, "CLONE invoked with default file descriptor\n"); 
+         printf("Close system call verified!");  
+         DPRINT(DEBUG_INFO, "CLOSE invoked with default file descriptor\n"); 
          server_default(fds, pollfds, public, private);
          return;
     } 
   
   if ( (get_private_fd(public->regs.arg0) == (int)private->regs.arg0) &&  
         (get_public_fd(private->regs.arg0) == (int)public->regs.arg0))
-      printf("CLONE system call verified\n"); 
+      printf("CLOSE system call verified\n"); 
 
   if(forward_syscall_request(fds[PRIVATE_TRUSTED], private) < 0)
            die("failed send request public trusted thread");
@@ -709,6 +704,7 @@ void server_getdents ( int fds[] ,struct pollfd pollfds[], const struct syscall_
 }
 void server_exit_group ( int fds[] ,struct pollfd poolfds[], const struct syscall_header * public , const struct syscall_header * private) {
 
+    //TODO this needs to be changed 
     server_default(fds, poolfds, public, private); 
 
     for ( int i=0; i< NFDS; i++)
@@ -718,7 +714,6 @@ void server_exit_group ( int fds[] ,struct pollfd poolfds[], const struct syscal
     pthread_exit(NULL); 
 
 }
-
 void server_write ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private) {
 
     struct syscall_result result; 
@@ -780,6 +775,58 @@ void server_write ( int fds[] ,struct pollfd pollfds[], const struct syscall_hea
 
     return; 
 }
+void server_read ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private){
+
+    struct syscall_result result; 
+    char * buf = NULL; 
+    size_t size=0; 
+    ssize_t transfered=0;  
+
+    DPRINT(DEBUG_INFO, "Start fstat handler\n"); 
+
+    // sanity checks 
+    assert( public->syscall_num == __NR_read  && private->syscall_num == __NR_read); 
+    
+    // reading from the standard input
+    if ( public->regs.arg0 == private->regs.arg0 && 
+         IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
+         DPRINT(DEBUG_INFO, "Fstat invoked with default file descriptor\n"); 
+         server_default(fds, pollfds, public, private);
+         return;
+    } 
+    
+    if ((get_private_fd(public->regs.arg0) == (int)private->regs.arg0) && 
+        (get_public_fd(private->regs.arg0) == (int)public->regs.arg0) && 
+        public->regs.arg2 == private->regs.arg2)
+        printf("READ syscall verified\n"); 
+    else 
+        printf("READ verification failed\n"); 
+
+    CLEAN_RES(&result);
+    size = public->regs.arg2; 
+    buf = malloc(size);
+    
+    // sends the request to the private application 
+    if(forward_syscall_request(fds[PRIVATE_TRUSTED], private) < 0)
+            die("failed send request public trusted thread");
+    //receive result with extra 
+    if ( (transfered=receive_result_with_extra(fds[PRIVATE_TRUSTED], &result, buf, size)) < 0) 
+        die("Error receiving result(READ)"); 
+    assert((size_t)transfered == (SIZE_RESULT + size) ); 
+   
+   // send results to the untrusted thread private  
+    if(forward_syscall_result(fds[PRIVATE_UNTRUSTED], &result) < 0)
+        die("Failed send request public trusted thread");
+    result.cookie = public->cookie; 
+    if((transfered=send_result_with_extra(fds[PUBLIC_UNTRUSTED], &result, buf, size)) < 0)
+        die("Failed sending result (READ)"); 
+   
+    assert((size_t)transfered == (SIZE_RESULT + size) ); 
+    free(buf); 
+    
+    return; 
+}
+/********************************************************************/
 
 /************** INSTALL SERVER HANDLER *****************************/ 
 void initialize_server_handler() { 
@@ -797,7 +844,7 @@ void initialize_server_handler() {
       { __NR_mmap,           server_mmap       },
       { __NR_close,          server_close      },
       { __NR_write,          server_write      },
-
+      { __NR_read,           server_read       }, 
    }; 
 
    syscall_table_server_ = (struct server_handler *)malloc( MAX_SYSTEM_CALL * (sizeof( struct server_handler))); 
