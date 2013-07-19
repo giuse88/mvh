@@ -35,10 +35,11 @@ int get_private_fd( int public) {
     return -1; 
 }
 int free_fd(int private, int public) {
-    for (int i=0; i < MAX_FD; i++) 
+    for (int i=0; i < MAX_FD; i++)
         if ( connection.fd_maps[i].private == private &&
-            connection.fd_maps[i].public == public){ 
+             connection.fd_maps[i].public == public)  {
             memset(&connection.fd_maps[i],0, sizeof( struct fd_pair));
+            return SUCCESS; 
         }
     return -1; 
 }
@@ -447,12 +448,12 @@ void server_mmap ( int fds[] ,struct pollfd pollfds[], const struct syscall_head
    // MAP_ANONYMOUS 0x20 00100000
    // MAP_ANO == MAP_ANONIMOUS 
    if (flags & MAP_ANONYMOUS) { 
-      DPRINT(DEBUG_INFO, "MMAP called with MAP_ANONYMOUS. Default behaviour\n");         
+      DPRINT(DEBUG_INFO, "MMAP invoked with MAP_ANONYMOUS. Default behaviour\n");         
       server_default(fds, pollfds, public, private); 
       return; 
    } 
   
-  DPRINT(DEBUG_INFO, "MMAP called for mapping a file\n");         
+  DPRINT(DEBUG_INFO, "MMAP invoked for mapping a file\n");         
   
   // I cannot allow  the public process to map a file in memory 
   flags |=  MAP_ANONYMOUS;
@@ -463,10 +464,12 @@ void server_mmap ( int fds[] ,struct pollfd pollfds[], const struct syscall_head
 
   // Ugly but it avoids to change the handlers interface 
   public_no_const = (void *)public; 
-  public_no_const->regs.arg3 = flags; 
-
-  syscall_info(public, &public->regs, &public_result, PUBLIC); 
-  syscall_info(private,&private->regs, &private_result, PRIVATE); 
+  public_no_const->regs.arg3  = flags;
+  // The page must be writable because it is filled out with the 
+  // content received from the server 
+  public_no_const->regs.arg2 |= PROT_WRITE; 
+  public_no_const->regs.arg4  = -1; 
+  public_no_const->regs.arg5  = 0; 
 
   if(forward_syscall_request(fds[PUBLIC_TRUSTED], public) < 0)
             die("failed send request public trusted thread");
@@ -478,28 +481,34 @@ void server_mmap ( int fds[] ,struct pollfd pollfds[], const struct syscall_head
   if(receive_syscall_result_async(fds[PUBLIC_TRUSTED], &public_result) < 0)  
             die("failed receive system call result"); 
   // receive the result along with the entire file 
-  // this can be quite problematic 
-  if(receive_result_with_extra(fds[PRIVATE_TRUSTED], &private_result, map_size, buf) < 0) 
+  // this can be quite problematic
+  int size=-1;
+  if((size=receive_result_with_extra(fds[PRIVATE_TRUSTED], &private_result, map_size, buf)) < 0) 
         die("Failed receiving result with extra\n"); 
 
-  DPRINT(DEBUG_INFO, "File received correctly\n"); 
+  DPRINT(DEBUG_INFO, "File received correctly size %d\n", size); 
   
-  // send the result header to the trusted thread 
-  if(forward_syscall_result(fds[PRIVATE_UNTRUSTED], &private_result) < 0)
-        die("Failed forwarding result to the private thread\n"); 
-
-  fprintf(stderr, "COOKIE %d %d %d %d ", private->cookie, private_result.cookie, public->cookie, public_result.cookie); 
-
-  // unfortunately I cannot send the file along with the result because
+   // unfortunately I cannot send the file along with the result because
   // I don't know the mapping address and I cannot neither call malloc
   // to allocate a temporary storage area. 
-
   // send the result to the untrusted   
   if(forward_syscall_result(fds[PUBLIC_UNTRUSTED], &public_result) < 0)
       die("Failed forwarding result with extra  to the public thread\n"); 
-  //send the file 
+  // send file
   send_extra_result(fds[PUBLIC_UNTRUSTED], buf, map_size); 
+  // send the result header to the trusted thread 
+  if(forward_syscall_result(fds[PRIVATE_UNTRUSTED], &private_result) < 0)
+        die("Failed forwarding result to the private thread\n"); 
  
+  printf("[ PUBLIC  ] mmap(%ld, %ld, 0x%lx, 0x%lx, %ld, %ld) = 0x%lX\n", public->regs.arg0, public->regs.arg1,
+                                                                   public->regs.arg2, public->regs.arg3,
+                                                                   public->regs.arg4, public->regs.arg5,
+                                                                   public_result.result); 
+  printf("[ PRIVATE ] mmap(%ld, %ld, 0x%lx, 0x%lx, %ld, %ld) = 0x%lX\n", private->regs.arg0, private->regs.arg1,
+                                                                   private->regs.arg2, private->regs.arg3,
+                                                                   private->regs.arg4, private->regs.arg5,
+                                                                   private_result.result); 
+  
   free(buf); 
 
   return; 
@@ -526,7 +535,7 @@ void server_close ( int fds[] ,struct pollfd poolfds[], const struct syscall_hea
   if(receive_syscall_result_async(fds[PRIVATE_TRUSTED], &result) < 0)  
             die("failed receive system call result");
 
-  if (free_fd(private->regs.arg0, public->regs.arg0) < 0) 
+  if (free_fd((int)private->regs.arg0, (int)public->regs.arg0) < 0) 
       die("Error, tried to free an incorrect fd");  
   else 
       DPRINT(DEBUG_INFO, "Remove fd pair [%ld:%ld]\n", private->regs.arg0, public->regs.arg0); 
@@ -538,6 +547,12 @@ void server_close ( int fds[] ,struct pollfd poolfds[], const struct syscall_hea
  
   if(forward_syscall_result(fds[PUBLIC_UNTRUSTED], &result) < 0)
       die("Failed forwarding result with extra  to the public thread\n"); 
+
+  printf("[ PUBLIC  ] close(%ld) = %ld\n", public->regs.arg0, result.result); 
+  printf("[ PRIVATE ] close(%ld) = %ld\n", private->regs.arg0,result.result); 
+
+
+  
   return; 
 }
 

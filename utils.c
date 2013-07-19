@@ -4,140 +4,117 @@
 #include <assert.h> 
 #include <sys/types.h> 
 #include <sys/socket.h>
+#include <unistd.h> 
 
 int receive_result_with_extra(int fd, struct syscall_result * result, int extra_size, char * buf) { 
-    struct iovec io[2];
-    struct msghdr msg; 
-    int transfered=0, temp=0; 
-    const int total =  SIZE_RESULT + extra_size; 
-
-    CLEAN_MSG(&msg);
-    memset(io, 0, sizeof(io)); 
-   
-    // result header 
-    io[1].iov_len=SIZE_RESULT; 
-    io[1].iov_base=result;
-    // result buffer
-    io[0].iov_len = extra_size; 
-    io[0].iov_base = buf; 
-    // iov struct 
-    msg.msg_iov=io;
-    msg.msg_iovlen=2;
     
+    int left = 0, transfered=0, temp=0; 
+    char * ptr = NULL; 
+
+    CLEAN_RES(result);
+
+    // send  struct result 
+    ASYNC_CALL(read(fd, result, SIZE_RESULT), temp);
+    assert(temp == SIZE_RESULT); 
+   
+    //read buffer
+    left = extra_size;
+    ptr = buf;
+
     do { 
-      temp = recvmsg(fd,&msg, 0);       
+      temp = read(fd,ptr,left);       
       if ( temp < 0 && (errno==EAGAIN || errno == EINTR || errno == EWOULDBLOCK)) 
         continue; 
       else if ( temp < 0 )
           die("Error receiveing data recvmsg (receive_result_with_extra)"); 
-      transfered += temp; 
-    } while(transfered < total); 
+      left -= temp; 
+      ptr  += temp; 
+      transfered += temp;
+      /*fprintf(stderr,"%d\n", left);*/
+    } while(left > 0); 
 
-    if ( transfered < 0) 
-        die("recvmsg (receive_result_with_extra)"); 
-    
-    assert(transfered == total);
+    assert(transfered == extra_size);
+
     return transfered; 
 }
 int send_result_with_extra(int fd, struct syscall_result * result, int extra_size, char * buf) {
 
-    struct iovec io[2];
-    struct msghdr msg; 
-    int transfered=0, temp=0; 
-    const int total =  SIZE_RESULT + extra_size; 
+    int left = 0, transfered=0, temp=0; 
+    char * ptr = NULL; 
 
-    CLEAN_MSG(&msg);
-    memset(io, 0, sizeof(io)); 
-    
-    // result header 
-    io[1].iov_len=SIZE_RESULT; 
-    io[1].iov_base=result;
-    // result buffer
-    io[0].iov_len = extra_size; 
-    io[0].iov_base = buf; 
-    // iov struct 
-    msg.msg_iov=io;
-    msg.msg_iovlen=2;
+    // send  struct result 
+    ASYNC_CALL(write(fd, result, SIZE_RESULT), temp);
+    assert(temp == SIZE_RESULT); 
+   
+    //read buffer
+    left = extra_size;
+    ptr = buf;
 
-    do {
-      temp=sendmsg(fd,&msg, 0); 
-      if ( temp < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
-          continue; 
-      else if ( temp < 0)
-          die("Failed sending data ( send_result_with_extra)");  
+    do { 
+      temp = write(fd,ptr,left);       
+      if ( temp < 0 && (errno==EAGAIN || errno == EINTR || errno == EWOULDBLOCK)) 
+        continue; 
+      else if ( temp < 0 )
+          die("Error receiveing data recvmsg (receive_result_with_extra)"); 
+      left -= temp; 
+      ptr  += temp; 
       transfered += temp; 
-    } while( transfered < total);
+      /*fprintf(stderr,"%d\n", left);*/
+    } while(left > 0); 
 
-    if ( transfered < 0) 
-        die("recvmsg (fstat handler)"); 
-
-    assert(transfered == total);
+    assert(transfered == extra_size);
 
     return transfered; 
 }
 
 ssize_t receive_extra_result(int fd , char * buf, size_t size){
-  
-    struct iovec io[1];
-    struct msghdr msg; 
-    int transfered=0, temp=0; 
-    const int total =size; 
-    CLEAN_MSG(&msg);
-    memset(io, 0, sizeof(io)); 
-    
-    // result header 
-    io[0].iov_len=size; 
-    io[0].iov_base=buf;
-    // result buffer
-    msg.msg_iov=io;
-    msg.msg_iovlen=1;
-     
+ 
+    int left = 0, transfered=0, temp=0; 
+    char * ptr = NULL; 
+
+    //read buffer
+    left = size;
+    ptr = buf;
+
     do { 
-      temp = recvmsg(fd,&msg, 0);       
+      temp = read(fd,ptr,left);       
       if ( temp < 0 && (errno==EAGAIN || errno == EINTR || errno == EWOULDBLOCK)) 
         continue; 
       else if ( temp < 0 )
           die("Error receiveing data recvmsg (receive_result_with_extra)"); 
-      transfered += temp; 
-    } while(transfered < total); 
+      left -= temp; 
+      ptr  += temp; 
+      transfered += temp;
+      /*fprintf(stderr, "%d\n", temp); */
+    } while(left > 0); 
 
-    if ( transfered < 0) 
-        die("recvmsg (receive extra result)"); 
-    assert(transfered == (int)(size)); 
-
+    assert(transfered == (int)size);
     return transfered; 
 
 } 
+
 ssize_t send_extra_result  (int fd, char * buf, size_t size) {
- 
-    struct iovec io[1];
-    struct msghdr msg; 
-    int transfered=0, temp=0; 
-    const int total = size; 
 
-    CLEAN_MSG(&msg);
-    memset(io, 0, sizeof(io)); 
-    
-    // result header 
-    io[0].iov_len=size; 
-    io[0].iov_base=buf;
-    // result buffer
-    msg.msg_iov=io;
-    msg.msg_iovlen=1;
-    
-    do {
-      temp=sendmsg(fd,&msg, 0); 
-      if ( temp < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
-          continue; 
-      else if ( temp < 0)
-          die("Failed sending data ( send_result_with_extra)");  
-      transfered += temp; 
-    } while( transfered < total);
+    int left = 0, transfered=0, temp=0; 
+    char * ptr = NULL; 
 
-    if ( transfered < 0) 
-        die("recvmsg (receive extra result)"); 
-    assert(transfered == (int)(size)); 
+        //read buffer
+    left = size;
+    ptr = buf;
 
+    do { 
+      temp = write(fd,ptr,left);       
+      if ( temp < 0 && (errno==EAGAIN || errno == EINTR || errno == EWOULDBLOCK)) 
+        continue; 
+      else if ( temp < 0 )
+          die("Error receiveing data recvmsg (receive_result_with_extra)"); 
+      left -= temp; 
+      ptr  += temp; 
+      transfered += temp;
+      /*fprintf(stderr, "%d\n", temp); */
+    } while(left > 0); 
+
+    assert(transfered == (int)size);
     return transfered; 
 } 
 

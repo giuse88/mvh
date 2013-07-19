@@ -310,30 +310,35 @@ void  trusted_fstat   ( int fd, const struct syscall_header * header) {
     int munmap(void *addr, size_t length)
  **/ 
 extern u64_t untrusted_mmap (const ucontext_t * uc) {
+    
+    int syscall_num = -1; 
+    struct syscall_result result;
+    u64_t extra = 0;  
+    int transfered =-1, size =-1; 
+    char *buf = NULL; 
+    
+    DPRINT(DEBUG_INFO, "MMPA Start untrusted handler\n");
+   
+    if (send_syscall_header(uc, extra) < 0)
+        die("Failed to send syscall_header"); 
   
-  struct syscall_result res; 
-  int fd = get_local_fd(); 
-  u64_t extra =0;  
-  char * buf = NULL;  
-  int buf_size =  uc->uc_mcontext.gregs[REG_ARG1];
+    if(receive_syscall_result(&result) < 0 )
+       die("Failed recieve_syscall_result"); 
+          
+    buf=(char *)result.result;
+    size = (long)uc->uc_mcontext.gregs[REG_ARG1]; 
+    
+    DPRINT(DEBUG_INFO, "%d bytes mapped at %p \n", size, buf);  
 
-  DPRINT(DEBUG_INFO, "--- MMPA Start untrusted handler\n"); 
-  
-  if (send_syscall_header(uc, extra)< 0)
-          die("Send syscall header"); 
-  // I cannot know the address returned by mmap
-  if (receive_syscall_result(&res) < 0)
-        die("Error reading result from mmap"); 
-  buf = (char *)res.result; 
- 
-  fpritnf(stderr, "%x %p", res.result, buf); 
 
-  if (receive_extra_result(fd, buf, buf_size) < 0)
-      die("Error receive extra result MMAP"); 
+    memset(buf, 0, size); 
 
-  DPRINT(DEBUG_INFO, "--- MMPA End   untrusted handler\n");
+    if((transfered=receive_extra_result(get_local_fd(), buf, size))< 0 ) 
+            die("Failed extra result"); 
 
-  return (u64_t)res.result; 
+    DPRINT(DEBUG_INFO, "Transfered data %d \n", transfered);
+
+    return (u64_t)result.result; 
   
 }
 extern void  trusted_mmap   ( int fd, const struct syscall_header * header) {
@@ -357,9 +362,10 @@ extern void  trusted_mmap   ( int fd, const struct syscall_header * header) {
   char * buf = (char *)result.result; 
   int   map_size = header->regs.arg1; 
 
-  printf("cookie %d\n", result.cookie); 
-  send_result_with_extra(fd, &result, map_size, buf);  
-  printf("cookie %d\n", result.cookie); 
+  int transfered = send_result_with_extra(fd, &result, map_size, buf);  
+
+  DPRINT(DEBUG_INFO, ">>> Transfered %d\n", transfered); 
+
   DPRINT(DEBUG_INFO, ">>> MMPA End   trusted handler\n");
 
 };
