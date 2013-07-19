@@ -1,7 +1,7 @@
 CC=gcc 
-CFLAGS = -g -std=gnu99 -O0 -Wall -Wextra -Wno-missing-field-initializers         \
+CFLAGS = -g -std=gnu99 -O0 -Wall -Wextra -Wno-missing-field-initializers  \
          -Wno-unused-parameter -I.
-DEBUG= -DCOLOR -DDEBUG 
+DEBUG= # -DCOLOR -DDEBUG 
 LDFLAGS=-ldl -g -lpthread  
 PWD=`pwd`
 LIB=
@@ -13,7 +13,7 @@ build_server: main_mvh_server.c mvh_server.c error.c
 	${CC} -g  ${DEBUG}  ${CFLAGS} -lpthread utils.c main_mvh_server.c server_handler.c mvh_server.c error.c -o mvh_server 
 
 mvh : main.o mvh.o error.o preload.so  
-	${LINKER} main.o mvh.o error.o -o mvh 	
+	${LINKER}  main.o mvh.o error.o -o mvh 	
 
 mvh.o: mvh.c 
 	${CC} mvh.c  -c ${DEBUG}  ${CFLAGS} -o mvh.o
@@ -69,7 +69,7 @@ preload.o: preload.c
 	${CC} preload.c -fPIC -c ${CFLAGS} ${DEBUG} -o preload.o
 
 preload.so: tls.o utils.o  handler.o syscall_table.o fault.o mmalloc.o library.o maps.o sandbox.o preload.o error.o trusted_thread.o bpf-filter.o x86_decoder.o syscall_entrypoint.o 
-	${LINKER} ${LDFLAGS} -fPIC -shared handler.o utils.o error.o tls.o  fault.o syscall_table.o x86_decoder.o library.o bpf-filter.o maps.o mmalloc.o  preload.o syscall_entrypoint.o sandbox.o trusted_thread.o -o preload.so 
+	${LINKER}  ${LDFLAGS} -fPIC -shared handler.o utils.o error.o tls.o  fault.o syscall_table.o x86_decoder.o library.o bpf-filter.o maps.o mmalloc.o  preload.o syscall_entrypoint.o sandbox.o trusted_thread.o -o preload.so 
 
 run: mvh preload.so  
 	@ ./mvh --private -s 127.0.0.1 -p 5555  /bin/ls -a 

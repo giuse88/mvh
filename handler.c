@@ -557,7 +557,7 @@ u64_t untrusted_read(const ucontext_t * uc ){
   if (send_syscall_header(uc, extra)< 0)
        die("Send syscall header"); 
 
-  buf  = uc->uc_mcontext.gregs[REG_ARG1]; 
+  buf  = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
   size = uc->uc_mcontext.gregs[REG_ARG2]; 
   received= receive_result_with_extra(fd, &res, buf, size); 
 

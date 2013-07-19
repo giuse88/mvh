@@ -227,10 +227,9 @@
  
 
 #ifndef __attribute_const__
-#define __attribute_const__  /* unimplemented 
+#define __attribute_const__   
 #endif
-
-*/ 
+*/
 
 /*
  * Tell gcc if a function is cold. The compiler will assume any path

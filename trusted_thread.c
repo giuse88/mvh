@@ -100,26 +100,27 @@ void   print_thread_info(const struct thread_info * info);
 /*void   print_syscall_info(const syscall_request * req); */
 
 
- static void return_from_clone_syscall(void *stack) {
+/* CLONE 
+ * static void return_from_clone_syscall(void *stack) {*/
 
- struct ucontext * uc =  (struct ucontext * ) stack; 
- DPRINT(DEBUG_INFO, "Clone handler, installed new stack frame at %p, RIP = 0x%lx\n", stack, (long) uc->uc_mcontext.gregs[REG_RIP]); 
- asm volatile ( "mov %0, %%rsp\n"
-                "mov $15, %%rax\n"
-                "syscall\n"
-                : 
-                : "m"(stack) 
-                : "memory"
-              ); 
-}
+ /*struct ucontext * uc =  (struct ucontext * ) stack; */
+ /*DPRINT(DEBUG_INFO, "Clone handler, installed new stack frame at %p, RIP = 0x%lx\n", stack, (long) uc->uc_mcontext.gregs[REG_RIP]); */
+ /*asm volatile ( "mov %0, %%rsp\n"*/
+                /*"mov $15, %%rax\n"*/
+                /*"syscall\n"*/
+                /*: */
+                /*: "m"(stack) */
+                /*: "memory"*/
+              /*); */
+/*}*/
 
-static int handle_new_thread( void * stack) {
- DPRINT(DEBUG_INFO, "Handle new thread\n"); 
- create_trusted_thread(); 
- DPRINT(DEBUG_INFO, "Stack pointer %p \n", stack); 
- return_from_clone_syscall(stack);
- return 0; 
-}
+/*static int handle_new_thread( void * stack) {*/
+ /*DPRINT(DEBUG_INFO, "Handle new thread\n"); */
+ /*create_trusted_thread(); */
+ /*DPRINT(DEBUG_INFO, "Stack pointer %p \n", stack); */
+ /*return_from_clone_syscall(stack);*/
+ /*return 0; */
+/*}*/
 
 int  trusted_thread(void * arg)
 {
@@ -174,7 +175,7 @@ int  trusted_thread(void * arg)
 
     nread=recvmsg(local_info.fd_remote_process, &msg, 0); 
 
-    if ((nread < SIZE_HEADER)  || request.cookie != local_info.monitored_thread_id){ 
+    if ((nread < (int)SIZE_HEADER)  || request.cookie != local_info.monitored_thread_id){ 
         DPRINT(DEBUG_INFO, "Trusted thread %ld cannot read the argumnt of %d, cookie %d\n",
                 syscall(SYS_gettid), request.syscall_num, request.cookie);  
         die("Failed read system call arguments"); 
@@ -194,7 +195,6 @@ int  trusted_thread(void * arg)
 int create_trusted_thread() 
 {
 
-  struct thread_local_info local_info; 
   void *tls=NULL; 
   int fd_remote_process;
 

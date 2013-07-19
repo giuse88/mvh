@@ -22,8 +22,8 @@ int  find_function_boundaries( char * instr, char **start, char ** end )
 
    char * ptr=instr;
 
-   for (unsigned short i; *ptr != '\xC3'; )
-      i=next_inst((const char **)&ptr, true,0, 0, 0, 0, 0);
+   for (; *ptr != '\xC3'; )
+      next_inst((const char **)&ptr, true,0, 0, 0, 0, 0);
     
    *end=ptr; 
 

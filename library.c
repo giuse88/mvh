@@ -271,11 +271,10 @@ void patch_syscalls_in_func(char *start, char *end) {
 //  DPRINT(DEBUG_ALL, "Instrcution 0x%x\n", code[i].insn); 
 
     bool is_indirect_call=false; 
-    bool is_syscall = true;
+    /*bool is_syscall = true;*/
 #if defined(__x86_64__)
     if (code[i].insn == 0x0F05 /* SYSCALL */  ) {
-        is_syscall = true; 
-
+        /*is_syscall = true; */
 #elif defined(__i386__)
     bool is_gs_call = false;
     if (code[i].len  == 7 &&
@@ -420,7 +419,7 @@ find_end:
         *(int *)(dest + (code[i].addr - code[first].addr) - 4)
           -= dest - code[first].addr;
           
-        DPRINT(DEBUG_INFO, "Allowing to realocate a ip-relative instruction\n",needed, dest); 
+        DPRINT(DEBUG_INFO, "Allowing to realocate a ip-relative instruction\n"); 
       }
 
       /*
@@ -531,11 +530,11 @@ find_end:
       // I need to make it writable
       //
       
-      char *page_address = GET_PAGE_ADDRESS(code[first].addr); 
+      uintptr_t page_address = GET_PAGE_ADDRESS(code[first].addr); 
      
-      DPRINT(DEBUG_ALL, "Original address %p, Page address %p \n", code[first].addr, page_address);  
+      DPRINT(DEBUG_ALL, "Original address %p, Page address %p \n", code[first].addr, (void*)page_address);  
 
-      make_writable(page_address, true); 
+      make_writable((void *)page_address, true); 
       
       memset( code[first].addr,0x90 , code[second].addr + code[second].len - code[first].addr);
       
@@ -552,10 +551,10 @@ find_end:
 #error unsupported target platform
 #endif
    
-     make_writable(page_address, false); 
+     make_writable((void*)page_address, false); 
     
     }  //this close the if  
-replaced:
+/*replaced:*/
     i = (i + 1) % (sizeof(code) / sizeof(struct code));
   } /* this close the cycle */ 
 }
