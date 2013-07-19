@@ -506,6 +506,37 @@ void  trusted_getdents   ( int fd, const struct syscall_header * header) {
   return; 
 }
 
+/* WRITE */ 
+u64_t untrusted_write(const ucontext_t * uc ){
+
+   struct syscall_result result; 
+   char * buf = NULL;  
+   size_t size =0; 
+   u64_t extra =0;  
+ 
+   UNTRUSTED_START("WRITE");
+
+   if (IS_STD_FD(uc->uc_mcontext.gregs[REG_ARG0]))
+      return untrusted_default(uc); 
+
+   CLEAN_RES(&result); 
+
+   buf = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
+   size  = uc->uc_mcontext.gregs[REG_ARG2];
+   extra = size; 
+  
+   if (send_syscall_header(uc, extra)< 0)
+      die("Send syscall header"); 
+  
+   if (send_extra(get_local_fd(), buf, size) < 0) 
+       die("Failed send extra (Untrudted write)"); 
+   
+   if(receive_syscall_result(&result) < 0 )
+       die("Failede get_syscall_result"); 
+
+   UNTRUSTED_END("WRITE"); 
+   return (u64_t)result.result; 
+}
 
 /*[> CLONE <] */
 /*u64_t clone_untrusted ( const ucontext_t * context) {*/

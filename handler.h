@@ -61,6 +61,7 @@ extern void trusted_exit_group( int, const struct syscall_header *);
 
 extern u64_t untrusted_open  (const ucontext_t * uc);
 extern u64_t untrusted_openat  (const ucontext_t * uc);
+extern u64_t untrusted_write (const ucontext_t * uc);
 
 extern u64_t untrusted_getdents  (const ucontext_t * uc); 
 extern void  trusted_getdents    ( int, const struct syscall_header *);

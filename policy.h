@@ -32,7 +32,8 @@ const struct policy public_policy[] = {
     { __NR_close,           DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
     { __NR_fstat,           untrusted_fstat,           DEFAULT_TRUSTED}, 
     { __NR_getdents,        untrusted_getdents,        NO_HANDLER}, 
-    { __NR_mmap,            untrusted_mmap,            DEFAULT_TRUSTED}, 
+    { __NR_mmap,            untrusted_mmap,            DEFAULT_TRUSTED},
+    { __NR_write,           untrusted_write,           DEFAULT_TRUSTED}, 
     /*{ __NR_writev,      sys_writev}, */
     /*{ __NR_pwrite,      sys_pwrite}, */
     /*{ __NR_pread,       sys_pread }, */
@@ -63,8 +64,7 @@ const struct policy private_policy[] = {
     { __NR_getdents,        DEFAULT_UNTRUSTED,         trusted_getdents}, 
     { __NR_mmap,            DEFAULT_UNTRUSTED,         trusted_mmap  },
     { __NR_close,           DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
-
-
+    { __NR_write,           untrusted_write,           DEFAULT_TRUSTED}, 
 };
  
 #endif /* end of include guard: POLICY_H */
