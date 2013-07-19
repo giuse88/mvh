@@ -738,14 +738,13 @@ void server_write ( int fds[] ,struct pollfd pollfds[], const struct syscall_hea
     private_buf  = malloc(size); 
     get_extra_arguments(fds[PUBLIC_UNTRUSTED],public_buf, fds[PRIVATE_UNTRUSTED], private_buf, size); 
 
-    printf("ddd"); 
 
-    buffer_match = memcpy(public_buf, private_buf, size)? false : true; 
+    buffer_match = memcmp(public_buf, private_buf, size)? false : true; 
 
     if ( ( public->regs.arg0 == private->regs.arg0) && 
          ( public->regs.arg2 == private->regs.arg2) && buffer_match && 
          IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
-            printf("Write system call verified!");  
+            printf("Write system call verified!\n");  
             DPRINT(DEBUG_INFO, "WRITE invoked with default file descriptor\n"); 
             server_default(fds, pollfds, public, private);
             return;
@@ -754,9 +753,9 @@ void server_write ( int fds[] ,struct pollfd pollfds[], const struct syscall_hea
     if ((get_private_fd(public->regs.arg0) == (int)private->regs.arg0) && 
         (get_public_fd(private->regs.arg0) == (int)public->regs.arg0)  &&
          ( public->regs.arg2 == private->regs.arg2) && buffer_match )
-         printf("Write system call verified!");  
+         printf("Write system call verified!\n");  
     else 
-        printf("Write verification failed"); 
+        printf("Write verification failed\n"); 
 
  
     // sends the request to the private application 

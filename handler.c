@@ -516,9 +516,6 @@ u64_t untrusted_write(const ucontext_t * uc ){
  
    UNTRUSTED_START("WRITE");
 
-   /*if (IS_STD_FD(uc->uc_mcontext.gregs[REG_ARG0]))*/
-      /*return untrusted_default(uc); */
-
    CLEAN_RES(&result); 
 
    buf = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
