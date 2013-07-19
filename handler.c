@@ -22,6 +22,8 @@
 
 #define UNTRUSTED_START(arg) DPRINT(DEBUG_INFO, "--- %s Start untrusted handler\n", arg); 
 #define UNTRUSTED_END(arg)   DPRINT(DEBUG_INFO, "--- %s End   untrusted handler\n", arg); 
+#define TRUSTED_START(arg)   DPRINT(DEBUG_INFO, ">>> %s Start trusted handler\n",   arg);
+#define TRUSTED_END(arg)     DPRINT(DEBUG_INFO, ">>> %s End   trusted handler\n",   arg);
 
 int receive_syscall_result (struct syscall_result * res){
     int received;
@@ -366,7 +368,7 @@ void  trusted_mmap   ( int fd, const struct syscall_header * header) {
   char * buf = (char *)result.result; 
   int   map_size = header->regs.arg1; 
 
-  int transfered = send_result_with_extra(fd, &result, map_size, buf);  
+  int transfered = send_result_with_extra(fd, &result, buf, map_size);  
 
   DPRINT(DEBUG_INFO, ">>> Transfered %d\n", transfered); 
 
@@ -379,7 +381,6 @@ void  trusted_mmap   ( int fd, const struct syscall_header * header) {
   int openat(int dirfd, const char *pathname, int flags);
   int openat(int dirfd, const char *pathname, int flags, mode_t mode);
 */ 
-
 u64_t untrusted_openat(const ucontext_t * uc ){
 
    struct syscall_result result; 
@@ -419,6 +420,68 @@ u64_t untrusted_openat(const ucontext_t * uc ){
   return (u64_t)result.result; 
 }
 
+/* GETDENT
+     int getdents(unsigned int fd, struct linux_dirent *dirp,
+                    unsigned int count);
+       Note: There is no glibc wrapper for this system call; see NOTES.
+ * 
+ */ 
+u64_t untrusted_getdents(const ucontext_t * uc ){
+
+  int received =-1; 
+  struct syscall_result res; 
+  int fd = get_local_fd(); 
+  int cookie = get_local_tid(); 
+  u64_t extra =0;  
+  char *buf = NULL; 
+  size_t size = 0; 
+  
+  UNTRUSTED_START("GETDENTS"); 
+
+  buf = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
+  size =  uc->uc_mcontext.gregs[REG_ARG2]; 
+
+  if (send_syscall_header(uc, extra)< 0)
+       die("Send syscall header");
+
+  if ( (received = receive_result_with_extra(fd, &res, buf, size)) < 0)
+      die("Recvmsg failed result stat"); 
+
+  assert(received == SIZE_RESULT + size); 
+  assert(res.cookie == cookie); 
+
+  UNTRUSTED_END("GETDENTS"); 
+  
+  return (u64_t)res.result; 
+}
+void  trusted_getdents   ( int fd, const struct syscall_header * header) {
+
+  struct syscall_result result; 
+  struct syscall_request request;
+  ssize_t transfered = -1; 
+
+  CLEAN_RES(&result); 
+  CLEAN_REQ(&request); 
+
+  UNTRUSTED_START("GETDENTS"); 
+
+  assert(header->syscall_num == __NR_getdents); 
+  request.syscall_identifier = header->syscall_num; 
+  memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
+  
+  result.result = do_syscall(&request);
+  result.cookie = header->cookie; 
+  result.extra = 0; 
+
+  transfered = send_result_with_extra(fd, &result, (char *)header->regs.arg1, header->regs.arg2);  
+  if ( transfered < 0) 
+      die("Recvmsg (Fstat handler)"); 
+ 
+  assert(transfered == SIZE_RESULT + header->regs.arg2); 
+  
+  DPRINT(DEBUG_INFO, ">>> FSTAT End   trusted handler\n");
+  return; 
+}
 
 
 /*[> CLONE <] */

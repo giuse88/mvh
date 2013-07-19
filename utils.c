@@ -6,16 +6,15 @@
 #include <sys/socket.h>
 #include <unistd.h> 
 
-int receive_result_with_extra(int fd, struct syscall_result * result, int extra_size, char * buf) { 
+ssize_t receive_result_with_extra(int fd, struct syscall_result * result,  char * buf, size_t extra_size) { 
     
-    int left = 0, transfered=0, temp=0; 
+    int left = 0, transfered=0, temp=0, transfered_result=0; 
     char * ptr = NULL; 
 
     CLEAN_RES(result);
 
-    // send  struct result 
-    ASYNC_CALL(read(fd, result, SIZE_RESULT), temp);
-    assert(temp == SIZE_RESULT); 
+    ASYNC_CALL(read(fd, result, SIZE_RESULT), transfered_result);
+    assert(transfered_result == SIZE_RESULT); 
    
     //read buffer
     left = extra_size;
@@ -33,18 +32,18 @@ int receive_result_with_extra(int fd, struct syscall_result * result, int extra_
       /*fprintf(stderr,"%d\n", left);*/
     } while(left > 0); 
 
-    assert(transfered == extra_size);
+    assert((size_t)transfered == extra_size);
 
-    return transfered; 
+    return transfered + transfered_result; 
 }
-int send_result_with_extra(int fd, struct syscall_result * result, int extra_size, char * buf) {
+ssize_t send_result_with_extra(int fd, struct syscall_result * result, char * buf ,size_t extra_size) {
 
-    int left = 0, transfered=0, temp=0; 
+    int left = 0, transfered=0, temp=0, transfered_result =0; 
     char * ptr = NULL; 
 
     // send  struct result 
-    ASYNC_CALL(write(fd, result, SIZE_RESULT), temp);
-    assert(temp == SIZE_RESULT); 
+    ASYNC_CALL(write(fd, result, SIZE_RESULT), transfered_result);
+    assert(transfered_result == SIZE_RESULT); 
    
     //read buffer
     left = extra_size;
@@ -62,9 +61,9 @@ int send_result_with_extra(int fd, struct syscall_result * result, int extra_siz
       /*fprintf(stderr,"%d\n", left);*/
     } while(left > 0); 
 
-    assert(transfered == extra_size);
+    assert((size_t)transfered == extra_size);
 
-    return transfered; 
+    return transfered + transfered_result; 
 }
 ssize_t receive_extra(int fd , char * buf, size_t size){
  

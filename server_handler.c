@@ -16,6 +16,8 @@
 #define DEFAULT_SERVER_HANDLER server_default
 struct server_handler * syscall_table_server_; 
 
+#define ATTACK printf("ATTACK")
+
 /*Wrong position */ 
 int get_free_fd() {
     for (int i=0; i < MAX_FD; i++) 
@@ -334,7 +336,7 @@ void server_open ( int fds[] ,struct pollfd pollfds[], const struct syscall_head
   if(forward_syscall_result(fds[PUBLIC_UNTRUSTED], &public_result) < 0)
            die("Failed send request public trusted thread");
 
-  printf("[ PUBLIC  ]  open(%s, %lx) = %ld\n", public_path,  public->regs.arg1, public_result.result); 
+  printf("[ PUBLIC  ] open(%s, %lx) = %ld\n", public_path,  public->regs.arg1, public_result.result); 
   printf("[ PRIVATE ] open(%s, %lx) = %ld\n", private_path, private->regs.arg1, private_result.result); 
 
   free(public_path);
@@ -408,7 +410,6 @@ void server_fstat ( int fds[] ,struct pollfd pollfds[], const struct syscall_hea
 
     return; 
 }
-
 void server_mmap ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private) {
 
    struct syscall_result public_result, private_result; 
@@ -484,7 +485,7 @@ void server_mmap ( int fds[] ,struct pollfd pollfds[], const struct syscall_head
   // receive the result along with the entire file 
   // this can be quite problematic
   int size=-1;
-  if((size=receive_result_with_extra(fds[PRIVATE_TRUSTED], &private_result, map_size, buf)) < 0) 
+  if((size=receive_result_with_extra(fds[PRIVATE_TRUSTED], &private_result, buf, map_size)) < 0) 
         die("Failed receiving result with extra\n"); 
 
   DPRINT(DEBUG_INFO, "File received correctly size %d\n", size); 
@@ -623,7 +624,64 @@ void server_openat ( int fds[] ,struct pollfd pollfds[], const struct syscall_he
 
   return; 
 }
-    /*EXIT GROUP*/
+void server_getdents ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private){
+
+    struct syscall_result result; 
+    char * buf = NULL; 
+    size_t size_buf = 0; 
+    ssize_t  transfered =-1; 
+    
+    DPRINT(DEBUG_INFO, "Start GETDENTS handler\n"); 
+
+    // sanity checks 
+    assert( public->syscall_num == __NR_getdents  && private->syscall_num == __NR_getdents); 
+    
+    if   ( (public->regs.arg2 == private->regs.arg2) && 
+           (get_private_fd(public->regs.arg0) == (int)private->regs.arg0) && 
+           (get_public_fd(private->regs.arg0) == (int)public->regs.arg0)) 
+       printf("GETDENTS system call verified\n");
+    else 
+        printf("ATTACK"); 
+
+    CLEAN_RES(&result); 
+   
+    // send request to the trusted private
+    if(forward_syscall_request(fds[PRIVATE_TRUSTED], private) < 0)
+            die("failed send request public trusted thread");
+    
+    size_buf = public->regs.arg2; 
+    buf = malloc(size_buf);  
+    if (!buf) 
+        die("Failed malloc (GETDENTS)"); 
+    else 
+        DPRINT(DEBUG_INFO, "Reserved %lu for temporary storage\n", size_buf); 
+
+    // receive result along with the buffer
+    transfered = receive_result_with_extra(fds[PRIVATE_TRUSTED], &result, buf, size_buf);  
+    if ( transfered < 0) 
+        die("Recvmsg (GETDENTS)"); 
+ 
+    // sanity check 
+    assert(transfered == (ssize_t)(SIZE_RESULT + size_buf));  
+   
+       // send results to the untrusted thread private  
+    if(forward_syscall_result(fds[PRIVATE_UNTRUSTED], &result) < 0)
+        die("Failed send request public trusted thread");
+
+    result.cookie = public->cookie; 
+    
+    transfered = send_result_with_extra(fds[PUBLIC_UNTRUSTED], &result, buf, size_buf);  
+    if ( transfered < 0) 
+        die("Send result with extra (GETDENTS)"); 
+  
+    assert(transfered == (ssize_t)(SIZE_RESULT + size_buf));  
+    free(buf); 
+
+    printf("[ PUBLIC  ] getdents(%ld, 0x%lx, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1,  public->regs.arg2,  result.result); 
+    printf("[ PRIVATE ] getdents(%ld, 0x%lx, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
+
+    return; 
+}
 void server_exit_group ( int fds[] ,struct pollfd poolfds[], const struct syscall_header * public , const struct syscall_header * private) {
 
     server_default(fds, poolfds, public, private); 
@@ -645,11 +703,12 @@ void initialize_server_handler() {
    } default_policy [] = {
         /*server handler */
       { __NR_exit_group,     server_exit_group },
-      { __NR_open,           server_open },
-      { __NR_openat,         server_openat },
-      { __NR_fstat,          server_fstat},
-      { __NR_mmap,           server_mmap},
-      { __NR_close,          server_close},
+      { __NR_open,           server_open       },
+      { __NR_openat,         server_openat     },
+      { __NR_fstat,          server_fstat      },
+      { __NR_getdents,       server_getdents   },
+      { __NR_mmap,           server_mmap       },
+      { __NR_close,          server_close      },
 
    }; 
 
