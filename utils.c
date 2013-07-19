@@ -7,10 +7,6 @@
 #include <unistd.h> 
 
 
-#define IS_STD_FD(arg) ( ( arg == STDOUT_FILENO) || \
-                         ( arg == STDERR_FILENO) || \
-                         ( arg ==  STDIN_FILENO) )
-
 ssize_t receive_result_with_extra(int fd, struct syscall_result * result,  char * buf, size_t extra_size) { 
     
     int left = 0, transfered=0, temp=0, transfered_result=0; 

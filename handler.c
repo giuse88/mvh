@@ -331,8 +331,14 @@ u64_t untrusted_mmap (const ucontext_t * uc) {
     u64_t extra = 0;  
     int transfered =-1, size =-1; 
     char *buf = NULL; 
-    
+    unsigned int flags =0; 
+
     DPRINT(DEBUG_INFO, "MMPA Start untrusted handler\n");
+ 
+    flags= uc->uc_mcontext.gregs[REG_ARG3];
+
+    if (flags & MAP_ANONYMOUS) 
+        return untrusted_default(uc);   
    
     if (send_syscall_header(uc, extra) < 0)
         die("Failed to send syscall_header"); 
@@ -360,9 +366,17 @@ void  trusted_mmap   ( int fd, const struct syscall_header * header) {
 
   struct syscall_result result; 
   struct syscall_request request;
+  unsigned int flags = 0; 
 
   CLEAN_RES(&result); 
   CLEAN_REQ(&request); 
+
+  flags= header->regs.arg3;
+
+  if (flags & MAP_ANONYMOUS) { 
+      trusted_default(fd, header);   
+      return; 
+  }
 
   DPRINT(DEBUG_INFO, ">>> MMPA Start trusted handler\n");
   
