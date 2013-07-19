@@ -532,7 +532,7 @@ void server_mmap ( int fds[] ,struct pollfd pollfds[], const struct syscall_head
 
   return; 
 }
-void server_close ( int fds[] ,struct pollfd poolfds[], const struct syscall_header * public , const struct syscall_header * private){
+void server_close ( int fds[] ,struct pollfd pollfds[], const struct syscall_header * public , const struct syscall_header * private){
 
    struct syscall_result result; 
 
@@ -543,7 +543,15 @@ void server_close ( int fds[] ,struct pollfd poolfds[], const struct syscall_hea
    // sanity checks 
    assert( public->syscall_num == __NR_close && private->syscall_num == __NR_close);
 
-   if ( (get_private_fd(public->regs.arg0) == (int)private->regs.arg0) &&  
+    if ( public->regs.arg0 == private->regs.arg0 && 
+         IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
+         printf("Clone system call verified!");  
+         DPRINT(DEBUG_INFO, "CLONE invoked with default file descriptor\n"); 
+         server_default(fds, pollfds, public, private);
+         return;
+    } 
+  
+  if ( (get_private_fd(public->regs.arg0) == (int)private->regs.arg0) &&  
         (get_public_fd(private->regs.arg0) == (int)public->regs.arg0))
       printf("CLONE system call verified\n"); 
 
