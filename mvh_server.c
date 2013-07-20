@@ -12,7 +12,9 @@
 #include <assert.h> 
 #include <stdbool.h> 
 #include <fcntl.h> 
-#include <poll.h> 
+#include <poll.h>
+#include <sys/timerfd.h> 
+#include <time.h> 
 
 #include "common.h" 
 #include "handler.h"
@@ -22,6 +24,47 @@
 #include "mvh_server.h"
 
 #define     MAX_LISTENER_SOCKET 10 
+
+/* TIMER FUNCTIONS */ 
+// this value is expressed in nano seconds
+#define TIMER_FD 4
+int create_timer(){
+  int timer=-1; 
+ // create the timer 
+  timer=timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK); 
+  if (timer < 0)
+      die("Failed creatining timer"); 
+  return timer; 
+}
+void set_timer(int fd){
+
+    struct itimerspec timer; 
+    
+    RESET(&timer, timer); 
+    timer.it_value.tv_nsec= TEMPORAL_WINDOW; 
+    timer.it_value.tv_sec = 0;   
+    if (timerfd_settime(fd, 0, &timer, NULL) < 0)
+        die("Failed setting timer"); 
+   
+    DPRINT(DEBUG_INFO, "Timer set\n"); 
+}; 
+void reset_timer(int fd) {
+    struct itimerspec timer;
+    RESET(&timer, struct itimerspec); 
+    if (timerfd_settime(fd, 0, &timer, NULL) < 0)
+        die("Failed setting timer"); 
+    DPRINT(DEBUG_INFO, "Timer reset \n"); 
+}
+bool handle_timer(int fd, bool is_set){
+        if (!is_set){
+            set_timer(fd);
+            return true;
+        } else {
+            reset_timer(fd);
+            return false;
+        }
+}   
+/*********************************************/
 
 /* PRINT FUNCTIONS */ 
 void print_thread_info(const struct thread_info * info, int fd){
@@ -108,15 +151,19 @@ int receive_syscall_header( int fd, struct syscall_header * header) {
 void  * handle_thread_pair(void * arg) {
 
     int fds[NFDS]={0}; 
-    struct pollfd pollfds[NFDS]; 
+    struct pollfd pollfds[NFDS +1]; 
     int res =-1; 
+    int timer =0; 
+    bool is_timer_set = false; 
+    uint64_t num_expirations =0; 
 
     fds[PUBLIC_TRUSTED]     = connection.public.trusted_fd; 
     fds[PUBLIC_UNTRUSTED]   = connection.public.untrusted_fd; 
     fds[PRIVATE_TRUSTED]    = connection.private.trusted_fd; 
     fds[PRIVATE_UNTRUSTED]  = connection.private.untrusted_fd; 
-    
-     /*
+
+    timer = create_timer(); 
+    /*
       * I must make the socket non-blocking 
       * because I don't know from which unstrused 
       * thread I wiil receive the first request
@@ -129,6 +176,11 @@ void  * handle_thread_pair(void * arg) {
         pollfds[i].fd = fds[i]; 
         pollfds[i].events =  POLLIN; /* there is data to read */ 
     }
+  
+    // timer for the temporal window 
+    pollfds[TIMER_FD].fd     = timer; 
+    pollfds[TIMER_FD].events = POLLIN; 
+    reset_timer(timer); 
 
     printf("Public untrusted %d  private untrusted %d\n", fds[PUBLIC_UNTRUSTED],fds[PRIVATE_UNTRUSTED]);  
     printf("Public trusted   %d  private trusted   %d\n", fds[PUBLIC_TRUSTED], fds[PRIVATE_TRUSTED]);  
@@ -145,31 +197,43 @@ void  * handle_thread_pair(void * arg) {
     /* 
      * = Read from the system call requests and call the correct handler 
      */ 
-    
-    res=poll(pollfds,NFDS,SERVER_TIMEOUT); 
+    res=poll(pollfds,NFDS+1,SERVER_TIMEOUT); 
 
     if (res == 0)
         irreversible_error("Connection Time out"); 
     else if ( res < 0 )
         die("pool"); 
-    // there must be at maximun two fd ready  
-    assert( res <= 2 ); 
+   
+    // there must be at maximun three  fd ready  
+    assert( res <= 3 ); 
+ 
+   if (pollfds[TIMER_FD].revents) {
+       if (read(timer, &num_expirations, sizeof(uint64_t)) < 0)
+            die("Read timer failed"); 
+       printf(">>>>>>>>>>>>>>>>> Temporal window expired %ld , possible attack!!!!!\n", num_expirations);
+       reset_timer(timer);
+    }
 
     if ( !pub_req && pollfds[PUBLIC_UNTRUSTED].revents) {
         pub_req = true; 
         receive_syscall_header(fds[PUBLIC_UNTRUSTED], &public_header); 
-        DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n", public_header.cookie, connection.public.untrusted.tid, 
-                                                                                      syscall_names[public_header.syscall_num], fds[PUBLIC_UNTRUSTED]);
-    }
+        DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n",
+               public_header.cookie, connection.public.untrusted.tid, 
+               syscall_names[public_header.syscall_num], fds[PUBLIC_UNTRUSTED]);
+        is_timer_set = handle_timer(timer, is_timer_set); 
+        }
 
     if (!priv_req && pollfds[PRIVATE_UNTRUSTED].revents) {
         priv_req = true; 
         receive_syscall_header(fds[PRIVATE_UNTRUSTED], &private_header); 
-        DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n", private_header.cookie, connection.private.untrusted.tid, 
-                                                                                      syscall_names[private_header.syscall_num], fds[PRIVATE_UNTRUSTED]);
+        DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n",
+                private_header.cookie, connection.private.untrusted.tid, 
+                syscall_names[private_header.syscall_num], fds[PRIVATE_UNTRUSTED]);
+        is_timer_set = handle_timer(timer, is_timer_set); 
     }
+       
 
-   if(pub_req && priv_req) {
+    if(pub_req && priv_req) {
   
         DPRINT(DEBUG_INFO, "Received an header pair\n");
        // we must call the handler 

@@ -25,6 +25,7 @@
   #error Architecture not supported
 #endif
 
+#define RESET(x,y) memset(x, 0, sizeof(y))
 
 typedef unsigned long u64_t; 
 extern char * syscall_names []; 

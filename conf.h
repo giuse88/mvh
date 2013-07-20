@@ -13,8 +13,8 @@
 #define SERVER_TIMEOUT          3 * 60 * 1000
 #define PUBLIC_STRING           "public" 
 #define PRIVATE_STRING          "private" 
-
-
+// nano seconds
+#define TEMPORAL_WINDOW          3000000   
 
 
 #endif /* end of include guard: CONF_H */
