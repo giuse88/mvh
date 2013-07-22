@@ -1,7 +1,7 @@
 CC=gcc 
 CFLAGS = -g -std=gnu99 -O0 -Wall -Wextra -Wno-missing-field-initializers  \
-         -Wno-unused-parameter -I.
-DEBUG= # -DCOLOR -DDEBUG 
+         -Wno-unused-parameter -I.  
+DEBUG=  # -DCOLOR -DDEBUG 
 LDFLAGS=-ldl -g -lpthread  
 PWD=`pwd`
 LIB=
@@ -70,6 +70,12 @@ preload.o: preload.c
 
 preload.so: tls.o utils.o  handler.o syscall_table.o fault.o mmalloc.o library.o maps.o sandbox.o preload.o error.o trusted_thread.o bpf-filter.o x86_decoder.o syscall_entrypoint.o 
 	${LINKER}  ${LDFLAGS} -fPIC -shared handler.o utils.o error.o tls.o  fault.o syscall_table.o x86_decoder.o library.o bpf-filter.o maps.o mmalloc.o  preload.o syscall_entrypoint.o sandbox.o trusted_thread.o -o preload.so 
+
+private-http: 	
+	./mvh --private /home/giuseppe/lighttpd-1.4.28/src/lighttpd -D -f /home/giuseppe/lighttpd-1.4.28/lighttpd.conf 
+
+public-http: 	
+	./mvh --public /home/giuseppe/lighttpd-1.4.28/src/lighttpd -D -f /home/giuseppe/lighttpd-1.4.28/lighttpd_2.conf 
 
 run: mvh preload.so  
 	@ ./mvh --private -s 127.0.0.1 -p 5555  /bin/ls -a 

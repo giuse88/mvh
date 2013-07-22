@@ -12,14 +12,11 @@
 #include <assert.h> 
 #include <stdbool.h> 
 #include <fcntl.h> 
-#include <poll.h>
 #include <sys/timerfd.h> 
 #include <time.h> 
-
-#include "common.h" 
+#include <sys/time.h>
 #include "handler.h"
 #include "syscall_x64.h"
-#include "color.h" 
 #include "server_handler.h"
 #include "mvh_server.h"
 
@@ -64,6 +61,11 @@ bool handle_timer(int fd, bool is_set){
             return false;
         }
 }   
+uint64_t timestamp() {
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+    return tv.tv_usec; 
+}
 /*********************************************/
 
 /* PRINT FUNCTIONS */ 
@@ -81,23 +83,7 @@ void print_thread_group(const struct thread_group * group){
     print_thread_pair(&group->public); 
     print_thread_pair(&group->private);
 }
-
-/* foir the time being I leave the server single thread 
-   if the list is empty I initialize a new one
-    if ( syncronisation_group_ == NULL) {
-       syncronisation_group_ = malloc(sizeof( struct syncronisation_group));
-       memset(syncronisation_group_, 0 , sizeof( struct syncronisation_group));
-       INIT_LIST_HEAD(&syncronisation_group_->list);
-    } else {
-         We are already dealing with some connection
-         the connection starts always with an untrusted thread 
-        if ( info.type= UNTRUSTED_THREAD && (
-
-    }
-*/ 
-
-struct thread_group * syncronisation_group_;
-struct thread_group connection;
+/********************************************/ 
 
 int make_socket_non_blocking (int sfd){
   int flags, s;
@@ -113,6 +99,7 @@ int make_socket_non_blocking (int sfd){
 
   return 0;
 }
+
 static void start_application( int fd) {
     int res =-1;
     char buf[COMMAND] = {0}; 
@@ -124,6 +111,7 @@ static void start_application( int fd) {
     if (res < COMMAND) 
           die("start process");
 }
+
 int receive_syscall_header( int fd, struct syscall_header * header) { 
     int res = -1; 
     struct iovec io[1];
@@ -150,43 +138,42 @@ int receive_syscall_header( int fd, struct syscall_header * header) {
 
 void  * handle_thread_pair(void * arg) {
 
-    int fds[NFDS]={0}; 
-    struct pollfd pollfds[NFDS +1]; 
     int res =-1; 
-    int timer =0; 
     bool is_timer_set = false; 
-    uint64_t num_expirations =0; 
+    uint64_t num_expirations =0, t1=0, t2 =0; 
+    struct thread_group * ths = (struct thread_group *)arg; 
 
-    fds[PUBLIC_TRUSTED]     = connection.public.trusted_fd; 
-    fds[PUBLIC_UNTRUSTED]   = connection.public.untrusted_fd; 
-    fds[PRIVATE_TRUSTED]    = connection.private.trusted_fd; 
-    fds[PRIVATE_UNTRUSTED]  = connection.private.untrusted_fd; 
+    ths->fds[PUBLIC_TRUSTED]     = ths->public.trusted_fd; 
+    ths->fds[PUBLIC_UNTRUSTED]   = ths->public.untrusted_fd; 
+    ths->fds[PRIVATE_TRUSTED]    = ths->private.trusted_fd; 
+    ths->fds[PRIVATE_UNTRUSTED]  = ths->private.untrusted_fd; 
 
-    timer = create_timer(); 
+    ths->timer = create_timer(); 
     /*
       * I must make the socket non-blocking 
       * because I don't know from which unstrused 
       * thread I wiil receive the first request
       */ 
 
-    memset(pollfds, 0, sizeof(pollfds)); 
-    for (int i=0; i < NFDS; i++){
-        make_socket_non_blocking(fds[i]); 
-        printf("%d : %d\n",i, fds[i]); 
-        pollfds[i].fd = fds[i]; 
-        pollfds[i].events =  POLLIN; /* there is data to read */ 
+   memset(ths->pollfds, 0, sizeof(struct pollfd)); 
+ 
+   for (int i=0; i < NFDS; i++){
+        make_socket_non_blocking(ths->fds[i]); 
+        printf("%d : %d\n",i, ths->fds[i]); 
+        ths->pollfds[i].fd = ths->fds[i]; 
+        ths->pollfds[i].events =  POLLIN; /* there is data to read */ 
     }
   
     // timer for the temporal window 
-    pollfds[TIMER_FD].fd     = timer; 
-    pollfds[TIMER_FD].events = POLLIN; 
-    reset_timer(timer); 
+    ths->pollfds[TIMER_FD].fd     = ths->timer; 
+    ths->pollfds[TIMER_FD].events = POLLIN; 
+    reset_timer(ths->timer); 
 
-    printf("Public untrusted %d  private untrusted %d\n", fds[PUBLIC_UNTRUSTED],fds[PRIVATE_UNTRUSTED]);  
-    printf("Public trusted   %d  private trusted   %d\n", fds[PUBLIC_TRUSTED], fds[PRIVATE_TRUSTED]);  
+    printf("Public untrusted %d  private untrusted %d\n", ths->fds[PUBLIC_UNTRUSTED],ths->fds[PRIVATE_UNTRUSTED]);  
+    printf("Public trusted   %d  private trusted   %d\n", ths->fds[PUBLIC_TRUSTED], ths->fds[PRIVATE_TRUSTED]);  
     
-    start_application(fds[PUBLIC_UNTRUSTED]); 
-    start_application(fds[PRIVATE_UNTRUSTED]); 
+    start_application(ths->fds[PUBLIC_UNTRUSTED]); 
+    start_application(ths->fds[PRIVATE_UNTRUSTED]); 
 
     bool pub_req=false, priv_req=false; 
     
@@ -197,7 +184,7 @@ void  * handle_thread_pair(void * arg) {
     /* 
      * = Read from the system call requests and call the correct handler 
      */ 
-    res=poll(pollfds,NFDS+1,SERVER_TIMEOUT); 
+    res=poll(ths->pollfds,NFDS+1,SERVER_TIMEOUT); 
 
     if (res == 0)
         irreversible_error("Connection Time out"); 
@@ -207,31 +194,31 @@ void  * handle_thread_pair(void * arg) {
     // there must be at maximun three  fd ready  
     assert( res <= 3 ); 
  
-   if (pollfds[TIMER_FD].revents) {
-       if (read(timer, &num_expirations, sizeof(uint64_t)) < 0)
+   if (ths->pollfds[TIMER_FD].revents) {
+       if (read(ths->timer, &num_expirations, sizeof(uint64_t)) < 0)
             die("Read timer failed"); 
-       printf(">>>>>>>>>>>>>>>>> Temporal window expired %ld , possible attack!!!!!\n", num_expirations);
-       reset_timer(timer);
+       printf(ANSI_COLOR_RED ">>>>>>>>>>>>>>>>> Temoral window expired %ld , possible attack!!!!!" ANSI_COLOR_RESET "\n", num_expirations);
+       printf("Value %lu , %lu\n", (t1-t2)*1000 , (t2-t1)*1000); 
+       reset_timer(ths->timer);
     }
 
-    if ( !pub_req && pollfds[PUBLIC_UNTRUSTED].revents) {
+    if ( !pub_req && ths->pollfds[PUBLIC_UNTRUSTED].revents) {
         pub_req = true; 
-        receive_syscall_header(fds[PUBLIC_UNTRUSTED], &public_header); 
-        DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n",
-               public_header.cookie, connection.public.untrusted.tid, 
-               syscall_names[public_header.syscall_num], fds[PUBLIC_UNTRUSTED]);
-        is_timer_set = handle_timer(timer, is_timer_set); 
+        receive_syscall_header(ths->fds[PUBLIC_UNTRUSTED], &public_header); 
+        DPRINT(DEBUG_INFO, " %lu Received request %d from %d for system call < %s > over %d\n", (t1=timestamp()),
+               public_header.cookie, ths->public.untrusted.tid, 
+               syscall_names[public_header.syscall_num], ths->fds[PUBLIC_UNTRUSTED]);
+        is_timer_set = handle_timer(ths->timer, is_timer_set); 
         }
 
-    if (!priv_req && pollfds[PRIVATE_UNTRUSTED].revents) {
+    if (!priv_req && ths->pollfds[PRIVATE_UNTRUSTED].revents) {
         priv_req = true; 
-        receive_syscall_header(fds[PRIVATE_UNTRUSTED], &private_header); 
-        DPRINT(DEBUG_INFO, "Received request %d from %d for system call < %s > over %d\n",
-                private_header.cookie, connection.private.untrusted.tid, 
-                syscall_names[private_header.syscall_num], fds[PRIVATE_UNTRUSTED]);
-        is_timer_set = handle_timer(timer, is_timer_set); 
+        receive_syscall_header(ths->fds[PRIVATE_UNTRUSTED], &private_header); 
+        DPRINT(DEBUG_INFO, "%lu Received request %d from %d for system call < %s > over %d\n", (t2=timestamp()), 
+                private_header.cookie, ths->private.untrusted.tid, 
+                syscall_names[private_header.syscall_num], ths->fds[PRIVATE_UNTRUSTED]);
+        is_timer_set = handle_timer(ths->timer, is_timer_set); 
     }
-       
 
     if(pub_req && priv_req) {
   
@@ -239,7 +226,7 @@ void  * handle_thread_pair(void * arg) {
        // we must call the handler 
         assert( private_header.syscall_num ==  public_header.syscall_num);
         int syscall_num = private_header.syscall_num; 
-        syscall_table_server_[syscall_num].handler(fds, pollfds, &public_header, &private_header); 
+        syscall_table_server_[syscall_num].handler(ths, &public_header, &private_header); 
        
         CLEAN_HEA(&public_header);
         CLEAN_HEA(&private_header);
@@ -253,11 +240,8 @@ void  * handle_thread_pair(void * arg) {
      return NULL;
 }
 
-void update_thread_group(struct  thread_group *group,
-                         struct thread_info * info,
-                         int sockfd,
-                         process_visibility visibility )
-{
+void update_thread_group(struct  thread_group *group, struct thread_info * info, int sockfd, process_visibility visibility ){
+    
     struct thread_pair * pair = (visibility == PUBLIC ) ?
                                 &(group->public) : &(group->private); 
 
@@ -274,13 +258,16 @@ void update_thread_group(struct  thread_group *group,
           die("Error unkown public thread"); 
     }
 }
-void handle_connection(int sockfd)
-{
+
+void handle_connection(int sockfd){
 
     struct thread_info info;
     int bytes_transfered = -1; 
     char buf[ACKNOWLEDGE]={0}; 
     pthread_t tid; 
+    
+    static bool first = true; 
+    static struct thread_group * ths = NULL;
 
     // get information about the untrusted process; 
     INTR_RES(read(sockfd, (char *)&info, sizeof(info)), bytes_transfered); 
@@ -296,31 +283,40 @@ void handle_connection(int sockfd)
 
     if (bytes_transfered != ACKNOWLEDGE)
         die("Read (waiting for acknowledge)"); 
- 
-    update_thread_group(&connection,&info, sockfd, info.visibility);  
+
+    if (first) {
+          first = false;
+          ths = malloc(sizeof (struct thread_group));    
+          RESET(ths, sizeof ( struct thread_group)); 
+          DPRINT(DEBUG_INFO, "Thread group information allocated at the position %p\n", ths); 
+    }
+
+    update_thread_group(ths,&info, sockfd, info.visibility);  
 
     // all threads are connected 
-  if ( connection.public.trusted_fd   && connection.public.untrusted_fd && 
-       connection.private.trusted_fd  && connection.private.untrusted_fd){
-       pthread_create(&tid, NULL, handle_thread_pair, NULL); 
-    }
+  if ( ths->public.trusted_fd   && ths->public.untrusted_fd && 
+       ths->private.trusted_fd  && ths->private.untrusted_fd){
+       pthread_create(&tid, NULL, handle_thread_pair, (void*)ths); 
+      
+      first= false;
+      // this memory is relesed by the EXIT SYSTEM CALL 
+      ths = NULL; 
+  }
 }
-void  run_mvh_server(int port) 
-{
+
+void  run_mvh_server(int port) {
     int listenfd = 0, connfd = 0;
     struct sockaddr_in serv_addr; 
     struct sockaddr_in client;
     int size_client= sizeof(struct sockaddr_in); 
    
     memset(&serv_addr, 0, sizeof(serv_addr));
-    syncronisation_group_ = NULL; 
 
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(port); 
 
     initialize_server_handler();
-        
 
     if((listenfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
         die("Socket"); 
@@ -347,6 +343,5 @@ void  run_mvh_server(int port)
         
         DPRINT(DEBUG_INFO, "Accepted connection from %s \n", inet_ntoa(client.sin_addr));
         handle_connection(connfd);
-           
     }
 }
