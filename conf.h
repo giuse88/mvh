@@ -14,6 +14,7 @@
 #define PUBLIC_STRING           "public" 
 #define PRIVATE_STRING          "private" 
 // nano seconds
-#define TEMPORAL_WINDOW          100000   
+//#define TEMPORAL_WINDOW          100000000  
+#define   TEMPORAL_WINDOW         1
 #define MAX_FD                   100 
 #endif /* end of include guard: CONF_H */

@@ -42,7 +42,6 @@ void set_timer(int fd){
     timer.it_value.tv_sec = 0;   
     if (timerfd_settime(fd, 0, &timer, NULL) < 0)
         die("Failed setting timer"); 
-   
     DPRINT(DEBUG_INFO, "Timer set\n"); 
 }; 
 void reset_timer(int fd) {
@@ -181,6 +180,21 @@ void  * handle_thread_pair(void * arg) {
  
     struct syscall_header private_header, public_header; 
 
+    if(pub_req && priv_req) {
+        
+        DPRINT(DEBUG_INFO, "Received an header pair\n");
+       // we must call the handler 
+        assert( private_header.syscall_num ==  public_header.syscall_num);
+        int syscall_num = private_header.syscall_num; 
+        syscall_table_server_[syscall_num].handler(ths, &public_header, &private_header); 
+    
+        CLEAN_HEA(&public_header);
+        CLEAN_HEA(&private_header);
+        pub_req    =false; 
+        priv_req   =false; 
+        DPRINT(DEBUG_INFO, "Back to main server function \n");
+    }
+ 
     /* 
      * = Read from the system call requests and call the correct handler 
      */ 
@@ -198,17 +212,18 @@ void  * handle_thread_pair(void * arg) {
        if (read(ths->timer, &num_expirations, sizeof(uint64_t)) < 0)
             die("Read timer failed"); 
        printf(ANSI_COLOR_RED ">>>>>>>>>>>>>>>>> Temoral window expired %ld , possible attack!!!!!" ANSI_COLOR_RESET "\n", num_expirations);
-       printf("Value %lu , %lu\n", (t1-t2)*1000 , (t2-t1)*1000); 
-       reset_timer(ths->timer);
-    }
+       printf("Value %ld , %ld\n", (long)(t1-t2)*1000 , (long)(t2-t1)*1000); 
+      //continue;  
+   }
 
     if ( !pub_req && ths->pollfds[PUBLIC_UNTRUSTED].revents) {
         pub_req = true; 
         receive_syscall_header(ths->fds[PUBLIC_UNTRUSTED], &public_header); 
-        DPRINT(DEBUG_INFO, " %lu Received request %d from %d for system call < %s > over %d\n", (t1=timestamp()),
+        DPRINT(DEBUG_INFO, "%lu Received request %d from %d for system call < %s > over %d\n", (t1=timestamp()),
                public_header.cookie, ths->public.untrusted.tid, 
                syscall_names[public_header.syscall_num], ths->fds[PUBLIC_UNTRUSTED]);
         is_timer_set = handle_timer(ths->timer, is_timer_set); 
+        continue; 
         }
 
     if (!priv_req && ths->pollfds[PRIVATE_UNTRUSTED].revents) {
@@ -218,23 +233,10 @@ void  * handle_thread_pair(void * arg) {
                 private_header.cookie, ths->private.untrusted.tid, 
                 syscall_names[private_header.syscall_num], ths->fds[PRIVATE_UNTRUSTED]);
         is_timer_set = handle_timer(ths->timer, is_timer_set); 
+        continue; 
     }
 
-    if(pub_req && priv_req) {
-  
-        DPRINT(DEBUG_INFO, "Received an header pair\n");
-       // we must call the handler 
-        assert( private_header.syscall_num ==  public_header.syscall_num);
-        int syscall_num = private_header.syscall_num; 
-        syscall_table_server_[syscall_num].handler(ths, &public_header, &private_header); 
-       
-        CLEAN_HEA(&public_header);
-        CLEAN_HEA(&private_header);
-        pub_req    =false; 
-        priv_req   =false; 
-        DPRINT(DEBUG_INFO, "Back to main server function \n");
-    }
-      
+     
   } while(ALWAYS); 
 
      return NULL;

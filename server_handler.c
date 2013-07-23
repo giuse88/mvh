@@ -538,7 +538,7 @@ void server_close ( struct thread_group* ths, const struct syscall_header * publ
 
     if ( public->regs.arg0 == private->regs.arg0 && 
          IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
-         printf("Close system call verified!");  
+         printf("Close system call verified!\n");  
          DPRINT(DEBUG_INFO, "CLOSE invoked with default file descriptor\n"); 
          server_default(ths, public, private);
          return;
@@ -646,8 +646,36 @@ void server_openat ( struct thread_group* ths, const struct syscall_header * pub
 
 void server_exit_group ( struct thread_group* ths, const struct syscall_header * public , const struct syscall_header * private) {
 
-    //TODO this needs to be changed 
-    server_default(ths, public, private); 
+    struct syscall_result public_result, private_result; 
+    
+    DPRINT(DEBUG_INFO, "Start EXIT_GROUP handler\n"); 
+
+    CLEAN_RES(&public_result); 
+    CLEAN_RES(&private_result); 
+
+    assert( public->syscall_num == __NR_exit_group  && private->syscall_num == __NR_exit_group); 
+    // reading from the standard input
+    if ( public->regs.arg0 == private->regs.arg0) 
+         printf("EXIT GOURP SYSTEM call verified correctely\n");
+    else 
+         printf("FAILED EXIT GROUP Verification\n"); 
+
+    // sends the request to the private application 
+    if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
+            die("failed send request public trusted thread");
+   
+    // sends the request to the public trusted thread  
+    if(forward_syscall_request(ths->fds[PUBLIC_TRUSTED], public) < 0)
+            die("failed send request public trusted thread");
+
+    if(receive_syscall_result_async(ths->fds[PUBLIC_TRUSTED], &public_result) < 0)
+           die("Failed receiving resutl from public trusted"); 
+
+    if(receive_syscall_result_async(ths->fds[PRIVATE_TRUSTED], &private_result) < 0)
+           die("Failed receiving resutl from public trusted"); 
+
+    printf("[ PUBLIC  ] exit_group(%ld) = %ld\n", public->regs.arg0, public_result.result); 
+    printf("[ PRIVATE ] exit_group(%ld) = %ld\n", private->regs.arg0, private_result.result); 
 
     for ( int i=0; i< NFDS; i++)
         close(ths->fds[i]); 

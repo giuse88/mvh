@@ -94,7 +94,6 @@ ssize_t send_syscall_result(int fd, struct syscall_result * res) {
   msg.msg_iovlen=1; 
 
   sent = sendmsg(fd, &msg,0);
-  
   if (sent < 0) 
         die("Failed sending syscall arguments"); 
 
