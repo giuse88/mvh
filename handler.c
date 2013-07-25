@@ -606,7 +606,262 @@ void  trusted_read  ( int fd, const struct syscall_header * header) {
   return; 
 }
 
+u64_t untrusted_ioctl(const ucontext_t * uc ){
 
+  int transfered =-1; 
+  struct syscall_result res; 
+  int fd = get_local_fd(); 
+  int cookie = get_local_tid(); 
+  char *buf = NULL; 
+  size_t size = 0; 
+  int extra =0; 
+  UNTRUSTED_START("IOCTL"); 
+
+ /* buf = (char *)uc->uc_mcontext.gregs[REG_ARG2]; */
+  /*size = get_size_from_cmd((int)uc->uc_mcontext.gregs[REG_ARG1]); */
+
+  /*for (int i=0; i< size; i++)*/
+    /*DPRINT(DEBUG_INFO, "%d : %X\n", i, *(buf + i)); */
+
+
+  /*untrusted_default(uc); */
+  
+  /*for (int i=0; i< size; i++)*/
+    /*DPRINT(DEBUG_INFO, "%d : %X\n", i, *(buf + i)); */
+
+  /*return;*/
+
+  if (IS_STD_FD(uc->uc_mcontext.gregs[REG_ARG0]))
+      return untrusted_default(uc); 
+
+  if (send_syscall_header(uc, extra)< 0)
+       die("Send syscall header"); 
+
+  buf = (char *)uc->uc_mcontext.gregs[REG_ARG2]; 
+  size = get_size_from_cmd((int)uc->uc_mcontext.gregs[REG_ARG1]); 
+
+  DPRINT(DEBUG_INFO, "IOCTL buffer has size %ld\n", size); 
+ 
+ /* if (send_syscall_header(uc, extra)< 0)*/
+       /*die("Send syscall header"); */
+  
+  if((transfered = receive_result_with_extra(fd, &res, buf, size)) < 0)
+     die("Receive result error (IOCTL)"); 
+ 
+/*   for (int i=0; i< size; i++)*/
+    /*DPRINT(DEBUG_INFO, "%d : %X\n", i, *(buf + i)); */
+
+  assert(transfered == (ssize_t)(SIZE_RESULT + size) || (transfered == (SIZE_RESULT) && (int)res.result < 0)); 
+  assert(res.cookie == cookie); 
+
+  UNTRUSTED_END("IOCTL"); 
+  
+  return (u64_t)res.result; 
+}
+void  trusted_ioctl ( int fd, const struct syscall_header * header) {
+
+  struct syscall_result result; 
+  struct syscall_request request;
+  ssize_t transfered = -1; 
+
+  CLEAN_RES(&result); 
+  CLEAN_REQ(&request); 
+
+  TRUSTED_START("IOCTL"); 
+
+  assert(header->syscall_num == __NR_ioctl);
+
+  if (IS_STD_FD(header->regs.arg0)) {
+      trusted_default(fd, header); 
+      return; 
+  }
+  
+  request.syscall_identifier = header->syscall_num; 
+  memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
+ 
+  size_t size_buf = get_size_from_cmd(header->regs.arg1);
+  char *buf = (char *)header->regs.arg2; 
+
+  /*for (int i=0; i< size_buf; i++)*/
+    /*printf("%d : %X\n",i, *(buf + i)); */
+ 
+  result.result = do_syscall(&request);
+  result.cookie = header->cookie; 
+  result.extra = 0; 
+ 
+  /*for (int i=0; i< size_buf; i++)*/
+    /*printf("%d : %X\n", i,  *(buf + i)); */
+
+  transfered = send_result_with_extra(fd, &result, buf, size_buf);  
+  if ( transfered < 0) 
+      die("Recvmsg (Fstat handler)"); 
+ 
+  assert(transfered == (ssize_t)(SIZE_RESULT + size_buf) || (transfered == (SIZE_RESULT) && (int)result.result < 0)); 
+  
+  TRUSTED_END("IOCTL"); 
+
+  return; 
+}
+
+u64_t untrusted_getcwd(const ucontext_t * uc ){
+
+  ssize_t received =0; 
+  struct syscall_result res; 
+  int fd = get_local_fd(); 
+  int cookie = get_local_tid(); 
+  u64_t extra =0;  
+  char * buf = NULL; 
+  size_t size =0; 
+
+  UNTRUSTED_START("GETCWD"); 
+
+  CLEAN_RES(&res); 
+ 
+  buf  = (char *)uc->uc_mcontext.gregs[REG_ARG0]; 
+  size = uc->uc_mcontext.gregs[REG_ARG1];
+  extra = size; 
+  
+  if (send_syscall_header(uc, extra)< 0)
+       die("Send syscall header"); 
+
+  received= receive_result_with_extra(fd, &res, buf, size); 
+
+  if ( received < 0) 
+      die("Recvmsg failed result stat"); 
+
+  assert(res.cookie == cookie); 
+  assert((size_t)received == (SIZE_RESULT + size)); 
+  
+  DPRINT(DEBUG_INFO, "The current working directory is %s\n", buf);  
+  
+  UNTRUSTED_END("READ"); 
+
+  return (u64_t)res.result; 
+}
+void  trusted_getcwd  ( int fd, const struct syscall_header * header) {
+
+  struct syscall_result result; 
+  struct syscall_request request;
+  ssize_t transfered =0; 
+
+  TRUSTED_START("GETCWD"); 
+
+  CLEAN_RES(&result); 
+  CLEAN_REQ(&request); 
+
+  assert(header->syscall_num == __NR_getcwd); 
+
+  request.syscall_identifier = header->syscall_num; 
+  memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
+  
+  result.result = do_syscall(&request);
+  result.cookie = header->cookie; 
+  result.extra = 0; 
+
+  transfered =send_result_with_extra(fd, &result, (char *)header->regs.arg0, header->regs.arg1);  
+  if ( transfered < 0) 
+      die("recvmsg (fstat handler)"); 
+
+  CHECK(transfered, header->regs.arg1 + SIZE_RESULT, result.result); 
+
+  TRUSTED_END("GETCWD"); 
+
+  return; 
+}
+
+u64_t untrusted_stat_priv(const ucontext_t * uc ){
+
+  struct syscall_result res; 
+  u64_t extra =0;  
+  char * path = NULL; 
+  size_t path_length = 0; 
+  
+  UNTRUSTED_START("STAT"); 
+
+  // the compiler should ensure there is a null after the last character
+  path = (char *)uc->uc_mcontext.gregs[REG_ARG0];  
+  path_length = strlen(path) + 1;
+  extra = path_length; 
+ 
+  DPRINT(DEBUG_INFO, "Path %s, Path length %d\n", path, path_length); 
+
+  if (send_syscall_header(uc, extra)< 0)
+       die("Send syscall header"); 
+
+  if (send_extra(get_local_fd(), path,path_length) < 0) 
+       die("Failed send extra (STAT)"); 
+  
+  if(receive_syscall_result(&res) < 0 )
+       die("Failede get_syscall_result"); 
+
+  UNTRUSTED_END("STAT"); 
+  return (u64_t)res.result; 
+}
+u64_t untrusted_stat_pub(const ucontext_t * uc ){
+
+  struct syscall_result res; 
+  int fd = get_local_fd(); 
+  u64_t extra =0;  
+  char * path = NULL; 
+  size_t path_length = 0; 
+  ssize_t transfered =-1; 
+  struct stat * stat_info =NULL; 
+  
+  UNTRUSTED_START("STAT"); 
+
+  // the compiler should ensure there is a null after the last character
+  path = (char *) uc->uc_mcontext.gregs[REG_ARG0];  
+  stat_info = ( struct stat *)uc->uc_mcontext.gregs[REG_ARG1];  
+  path_length = strlen(path) + 1;
+  extra = path_length; 
+  
+  DPRINT(DEBUG_INFO, "Path %s, Path length %d\n", path, path_length); 
+  
+  if (send_syscall_header(uc, extra)< 0)
+       die("Send syscall header"); 
+
+  if (send_extra(get_local_fd(), path, path_length) < 0) 
+       die("Failed send extra (STAT)"); 
+
+  transfered= receive_result_with_extra(fd, &res, (char *)stat_info, sizeof ( struct stat) ); 
+  if ( transfered < 0) 
+      die("Recvmsg failed result stat"); 
+  
+  CHECK(transfered, sizeof(struct stat) + SIZE_RESULT, res.result); 
+
+  UNTRUSTED_END("STAT"); 
+  return (u64_t)res.result; 
+}
+void  trusted_stat   ( int fd, const struct syscall_header * header) {
+
+  struct syscall_result result; 
+  struct syscall_request request;
+  ssize_t transfered =-1; 
+  
+  CLEAN_RES(&result); 
+  CLEAN_REQ(&request); 
+
+  TRUSTED_START("STAT"); 
+  
+  assert(header->syscall_num == __NR_stat); 
+  
+  request.syscall_identifier = header->syscall_num; 
+  memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
+  
+  result.result = do_syscall(&request);
+  result.cookie = header->cookie; 
+  result.extra = 0; 
+
+  transfered =send_result_with_extra(fd, &result, (char *)header->regs.arg1, sizeof (struct stat));  
+  if ( transfered < 0) 
+      die("recvmsg (fstat handler)"); 
+
+  CHECK(transfered, sizeof(struct stat) + SIZE_RESULT, result.result); 
+  
+  TRUSTED_END("STAT"); 
+
+  return; 
+}
 
 /*[> CLONE <] */
 /*u64_t clone_untrusted ( const ucontext_t * context) {*/

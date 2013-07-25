@@ -75,4 +75,14 @@ extern void  trusted_read  ( int, const struct syscall_header *);
 extern u64_t untrusted_mmap (const ucontext_t * uc);  
 extern void  trusted_mmap   ( int, const struct syscall_header *);
 
+extern u64_t untrusted_ioctl (const ucontext_t * uc);  
+extern void  trusted_ioctl   ( int, const struct syscall_header *);
+
+extern u64_t untrusted_getcwd (const ucontext_t * uc);  
+extern void  trusted_getcwd  ( int, const struct syscall_header *);
+
+extern u64_t untrusted_stat_priv(const ucontext_t * uc ); 
+extern u64_t untrusted_stat_pub(const ucontext_t * uc );
+extern void  trusted_stat   ( int fd, const struct syscall_header * header); 
+
 #endif /* end of include guard: HANDLER_H */

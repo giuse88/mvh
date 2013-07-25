@@ -1,3 +1,4 @@
+
 #include "server_handler.h"
 #include "common.h"
 #include <sys/syscall.h> 
@@ -12,9 +13,14 @@
 #include <sys/mman.h> 
 #include "utils.h" 
 #include <fcntl.h> 
+#include <termios.h> 
+#include <sys/ioctl.h>
 
 #define DEFAULT_SERVER_HANDLER server_default
 struct server_handler * syscall_table_server_; 
+
+#define SYSCALL_VERIFIED(__arg)    printf(ANSI_COLOR_GREEN "[ SERVER  ] System call %s verified!%s\n", (char *)__arg, ANSI_COLOR_RESET)
+#define SYSCALL_NO_VERIFIED(__arg) printf(ANSI_COLOR_RED   "[ ALERT   ] System call %s NOT verified!%s\n", (char *)__arg, ANSI_COLOR_RESET)
 
 #define ATTACK printf("ATTACK")
 
@@ -58,10 +64,11 @@ void  syscall_info(const struct  syscall_header * head, const struct syscall_reg
     }
     
     char * color = ( vis == PUBLIC ) ? ANSI_COLOR_GREEN : ANSI_COLOR_RED; 
+    color = ""; 
 
-    printf( "%s%-20d%-20s%-20lx%-20lx%-20lx%-20lx%-20lx%-20lx%-20lx%s\n", color, head->cookie,
+    printf( "%s%-20d%-20s%-20lx%-20lx%-20lx%-20lx%-20lx%-20lx%-20ld%s\n", color, head->cookie,
              syscall_names[head->syscall_num], 
-             reg->arg0,  reg->arg1,reg->arg2, reg->arg3,  reg->arg4, reg->arg5, res->result,ANSI_COLOR_RESET); 
+             reg->arg0,  reg->arg1,reg->arg2, reg->arg3,  reg->arg4, reg->arg5, (long int)res->result,ANSI_COLOR_RESET); 
 }
 int forward_syscall_request ( int fd, const struct syscall_header * header) {
 
@@ -295,10 +302,9 @@ void server_open ( struct thread_group* ths, const struct syscall_header * publi
 
    if (!strncmp(private_path, public_path, length) &&
         public->regs.arg1 == private->regs.arg1)
-       DPRINT(DEBUG_INFO,"The system call arguments are equal\n");
+       SYSCALL_VERIFIED("OPEN"); 
    else 
-       DPRINT(DEBUG_INFO," The arguments of open syscall are different (Possible attack)\n");
-
+       SYSCALL_NO_VERIFIED("OPEN"); 
   
    // sends the request to the private application 
   if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
@@ -359,9 +365,9 @@ void server_fstat ( struct thread_group* ths, const struct syscall_header * publ
     
     if ((get_private_fd(ths, public->regs.arg0) == (int)private->regs.arg0) && 
         (get_public_fd(ths, private->regs.arg0) == (int)public->regs.arg0))
-        printf("FSTAT syscall verified"); 
+        SYSCALL_VERIFIED("FSTAT"); 
     else 
-        printf("Fstat verification failed"); 
+        SYSCALL_NO_VERIFIED("FSTAT"); 
 
 
     /* ACTIONS  
@@ -450,9 +456,9 @@ void server_mmap ( struct thread_group* ths, const struct syscall_header * publi
         (public->regs.arg2 == private->regs.arg2) &&  
         (public->regs.arg3 == private->regs.arg3) &&
         (public->regs.arg5 == private->regs.arg5)) 
-    printf("MMAP : System call verified\n"); 
+    SYSCALL_VERIFIED("MMAP"); 
    else 
-    printf("MMAP : System call failed verification\n");
+    SYSCALL_NO_VERIFIED("MMAP");
     
    map_size = public->regs.arg1; 
    flags= public->regs.arg3; 
@@ -538,16 +544,18 @@ void server_close ( struct thread_group* ths, const struct syscall_header * publ
 
     if ( public->regs.arg0 == private->regs.arg0 && 
          IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
-         printf("Close system call verified!\n");  
-         DPRINT(DEBUG_INFO, "CLOSE invoked with default file descriptor\n"); 
-         server_default(ths, public, private);
-         return;
+          SYSCALL_VERIFIED("CLOSE"); 
+          DPRINT(DEBUG_INFO, "CLOSE invoked with default file descriptor\n"); 
+          server_default(ths, public, private);
+          return;
     } 
   
   if ( (get_private_fd(ths,public->regs.arg0) == (int)private->regs.arg0) &&  
         (get_public_fd(ths,private->regs.arg0) == (int)public->regs.arg0))
-      printf("CLOSE system call verified\n"); 
-
+      SYSCALL_VERIFIED("CLOSE"); 
+  else 
+      SYSCALL_NO_VERIFIED("CLOSE"); 
+  
   if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
            die("failed send request public trusted thread");
 
@@ -600,9 +608,9 @@ void server_openat ( struct thread_group* ths, const struct syscall_header * pub
    if ( !strncmp(private_path, public_path, length) &&
        (public->regs.arg2 == private->regs.arg2) && 
        (public->regs.arg0 == private->regs.arg0))
-       DPRINT(DEBUG_INFO,"OPENAT system call  verified\n");
+       SYSCALL_VERIFIED("OPENAT");
    else 
-       DPRINT(DEBUG_INFO," The arguments of open syscall are different (Possible attack)\n");
+       SYSCALL_NO_VERIFIED("OPENAT");
 
   
    // sends the request to the private application 
@@ -656,9 +664,9 @@ void server_exit_group ( struct thread_group* ths, const struct syscall_header *
     assert( public->syscall_num == __NR_exit_group  && private->syscall_num == __NR_exit_group); 
     // reading from the standard input
     if ( public->regs.arg0 == private->regs.arg0) 
-         printf("EXIT GOURP SYSTEM call verified correctely\n");
+         SYSCALL_VERIFIED("EXIT GROUP");
     else 
-         printf("FAILED EXIT GROUP Verification\n"); 
+         SYSCALL_NO_VERIFIED("EXIT GROUP"); 
 
     // sends the request to the private application 
     if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
@@ -701,7 +709,7 @@ void server_read ( struct thread_group* ths, const struct syscall_header * publi
     // reading from the standard input
     if ( public->regs.arg0 == private->regs.arg0 && 
          IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
-         DPRINT(DEBUG_INFO, "Fstat invoked with default file descriptor\n"); 
+         DPRINT(DEBUG_INFO, "READ invoked with default file descriptor\n"); 
          server_default(ths, public, private);
          return;
     } 
@@ -709,9 +717,9 @@ void server_read ( struct thread_group* ths, const struct syscall_header * publi
     if ((get_private_fd(ths,public->regs.arg0) == (int)private->regs.arg0) && 
         (get_public_fd(ths,private->regs.arg0) == (int)public->regs.arg0) && 
         public->regs.arg2 == private->regs.arg2)
-        printf("READ syscall verified\n"); 
+        SYSCALL_VERIFIED("READ"); 
     else 
-        printf("READ verification failed\n"); 
+        SYSCALL_NO_VERIFIED("READ"); 
 
     CLEAN_RES(&result);
     size = public->regs.arg2; 
@@ -734,7 +742,10 @@ void server_read ( struct thread_group* ths, const struct syscall_header * publi
    
     assert((size_t)transfered == (SIZE_RESULT + size) ); 
     free(buf); 
-    
+
+    printf("[ PUBLIC  ] read(%ld, 0x%lx, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1,  public->regs.arg2,  result.result); 
+    printf("[ PRIVATE ] read(%ld, 0x%lx, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
+
     return; 
 }
 
@@ -753,9 +764,9 @@ void server_getdents ( struct thread_group * ths, const struct syscall_header * 
     if   ( (public->regs.arg2 == private->regs.arg2) && 
            (get_private_fd(ths, public->regs.arg0) == (int)private->regs.arg0) && 
            (get_public_fd(ths, private->regs.arg0) == (int)public->regs.arg0)) 
-       printf("GETDENTS system call verified\n");
+       SYSCALL_VERIFIED("GETDENTS");
     else 
-        printf("ATTACK"); 
+       SYSCALL_NO_VERIFIED("GETDENTS"); 
 
     CLEAN_RES(&result); 
    
@@ -809,7 +820,7 @@ void server_write ( struct thread_group * ths, const struct syscall_header * pub
     CLEAN_RES(&result); 
 
     assert( public->syscall_num == __NR_write && private->syscall_num == __NR_write); 
-    assert( public->regs.arg2 == private->regs.arg2); 
+   // assert( public->regs.arg2 == private->regs.arg2); 
 
     size = public->regs.arg2; 
     public_buf   = malloc(size); 
@@ -820,9 +831,8 @@ void server_write ( struct thread_group * ths, const struct syscall_header * pub
     buffer_match = memcmp(public_buf, private_buf, size)? false : true; 
 
     if ( ( public->regs.arg0 == private->regs.arg0) && 
-         ( public->regs.arg2 == private->regs.arg2) && buffer_match && 
          IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
-            printf("Write system call verified!\n");  
+            SYSCALL_VERIFIED("WRITE");  
             DPRINT(DEBUG_INFO, "WRITE invoked with default file descriptor\n"); 
             server_default(ths, public, private);
             return;
@@ -831,11 +841,10 @@ void server_write ( struct thread_group * ths, const struct syscall_header * pub
     if ((get_private_fd(ths, public->regs.arg0) == (int)private->regs.arg0) && 
         (get_public_fd(ths, private->regs.arg0) == (int)public->regs.arg0)  &&
          ( public->regs.arg2 == private->regs.arg2) && buffer_match )
-         printf("Write system call verified!\n");  
+         SYSCALL_VERIFIED("WRITE");  
     else 
-        printf("Write verification failed\n"); 
+        SYSCALL_NO_VERIFIED("WRITE"); 
 
- 
     // sends the request to the private application 
     if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
             die("failed send request public trusted thread");
@@ -859,6 +868,272 @@ void server_write ( struct thread_group * ths, const struct syscall_header * pub
     return; 
 }
 
+bool verify_ioctl( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private, char * public_buf, char * private_buf) {
+    
+    bool fd=false, command = false, buffer=false;
+
+    if ( public->syscall_num != private->syscall_num)
+         return false; 
+    // verify FIRST ARGUMENT FD 
+    if ( public->regs.arg0 == private->regs.arg0 && 
+         IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0))
+            fd=true;    
+    else if ((get_private_fd(ths, public->regs.arg0) == (int)private->regs.arg0) && 
+             (get_public_fd(ths, private->regs.arg0) == (int)public->regs.arg0))
+           fd= true; 
+  
+    if ( public->regs.arg1 == private->regs.arg1)
+         command = true;
+
+    if (!public_buf && !private_buf) 
+        buffer=true; 
+    else { 
+          // compare the buffer. the size of the buffer can be retrivied from the 
+          // comnand type
+         buffer=false;
+    }
+    
+    return fd && command && buffer; 
+} 
+
+void server_ioctl ( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result;
+    ssize_t transfered = -1;
+    bool check=true; 
+
+    DPRINT(DEBUG_INFO, "Start IOCTL handler\n"); 
+    assert( public->syscall_num == __NR_ioctl  && private->syscall_num == __NR_ioctl); 
+    
+    // GET INPUT ARGUMENT 
+    // LIGHTHTTP uses the IOCTL with output variables 
+    //get_extra_arguments()
+   
+    check=verify_ioctl(ths, public, private, NULL, NULL); 
+
+    if (check) 
+        SYSCALL_VERIFIED("IOCTL"); 
+    else 
+        SYSCALL_NO_VERIFIED("IOCTL"); 
+    
+    if (IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
+         DPRINT(DEBUG_INFO,"IOCTL called over a standard descriptor");
+         server_default(ths, public, private);
+         return;
+    } 
+    
+    CLEAN_RES(&result); 
+    
+    // sends the request to the private application 
+    if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
+            die("failed send request public trusted thread");
+  
+    size_t size_buf = get_size_from_cmd(public->regs.arg1);
+    char *buf = malloc(size_buf); 
+    
+    transfered = receive_result_with_extra(ths->fds[PRIVATE_TRUSTED], &result, buf, size_buf);  
+    if ( transfered < 0) 
+        die("Receive result with extra (IOCTL)"); 
+
+    assert(transfered == (ssize_t)(SIZE_RESULT + size_buf) || (transfered == (SIZE_RESULT) && (int)result.result < 0)); 
+    
+    result.cookie = public->cookie; 
+    transfered = send_result_with_extra(ths->fds[PUBLIC_UNTRUSTED], &result, buf, size_buf);  
+    if ( transfered < 0) 
+        die("Send result with extra (IOCTL)"); 
+    
+    assert(transfered == (ssize_t)(SIZE_RESULT + size_buf) || (transfered == (SIZE_RESULT) && (int)result.result < 0)); 
+
+    result.cookie = private->cookie;
+    // send results to the untrusted thread private  
+    if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], &result) < 0)
+        die("Failed send request public trusted thread");
+    free(buf); 
+
+    printf("[ PUBLIC  ] ioclt(%ld, %lx, %lx) = %ld\n", public->regs.arg0,  public->regs.arg1, public->regs.arg2, result.result); 
+    printf("[ PRIVATE ] ioctl(%ld, %lx, %lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
+
+    return; 
+}
+
+void server_munmap( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+
+    /*printf("[ PUBLIC  ] write(%ld, %lx, %ld) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); */
+    /*printf("[ PRIVATE ] write(%ld, %lx, %ld) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); */
+
+    /*return; */
+}
+ 
+void server_getpid( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+ 
+    struct syscall_result private_result, public_result; 
+    
+    CLEAN_RES(&private_result); 
+    CLEAN_RES(&public_result);
+
+    if (private->syscall_num ==  __NR_getpid && public->syscall_num == __NR_getpid )
+        SYSCALL_VERIFIED("GETPID"); 
+    else 
+        SYSCALL_NO_VERIFIED("GETPID"); 
+
+
+    private_result.result = ths->private.trusted.pid; 
+    private_result.cookie = private->cookie; 
+    private_result.extra = 0; 
+   
+    public_result.result = ths->public.trusted.pid; 
+    public_result.cookie = public->cookie; 
+    public_result.extra = 0; 
+  
+    if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], &private_result) < 0)
+        die("Failed send request private untrusted thread");
+
+    if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], &public_result) < 0)
+        die("Failed send request public untrusted thread");
+
+    printf("[ PUBLIC  ] getpid() = %ld\n", public_result.result); 
+    printf("[ PRIVATE ] getpid() = %ld\n", private_result.result); 
+
+    return; 
+}
+
+void execution_private_variant(struct thread_group * ths, const struct syscall_header * public, const struct syscall_header * private, 
+                                     struct syscall_result * result){
+
+    CLEAN_RES(result);
+
+    // sends the request to the private application 
+    if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
+            die("failed send request public trusted thread");
+
+    //receive result with extra 
+    if ( (receive_syscall_result_async(ths->fds[PRIVATE_TRUSTED], result)) < 0) 
+        die("Error receiving result(READ)"); 
+   
+   // send results to the untrusted thread private  
+    if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], result) < 0)
+        die("Failed send request public trusted thread");
+
+    result->cookie = public->cookie;
+    // send results to the untrusted thread private  
+    if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], result) < 0)
+        die("Failed send request public trusted thread");
+  
+    return; 
+}
+
+void execution_private_variant_extra(struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private, 
+    struct syscall_result * result,  size_t size){
+
+    ssize_t transfered =-1; 
+    char * buf = malloc(size);
+    
+    CLEAN_RES(result);
+
+    // sends the request to the private application 
+    if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
+            die("failed send request public trusted thread");
+
+    //receive result with extra 
+    if ( (transfered=receive_result_with_extra(ths->fds[PRIVATE_TRUSTED], result, buf, size)) < 0) 
+        die("Error receiving result(READ)"); 
+   
+   CHECK(transfered, size + SIZE_RESULT, result->result); 
+   // send results to the untrusted thread private  
+    if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], result) < 0)
+        die("Failed send request public trusted thread");
+
+    result->cookie = public->cookie;
+    if((transfered=send_result_with_extra(ths->fds[PUBLIC_UNTRUSTED], result, buf, size)) < 0)
+        die("Failed sending result (READ)"); 
+   
+    CHECK(transfered, size + SIZE_RESULT, result->result); 
+    free(buf); 
+    return; 
+}
+
+void server_getcwd( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+
+    if ( public->regs.arg1 == private->regs.arg1)
+        SYSCALL_VERIFIED("GETCWD"); 
+    else 
+        SYSCALL_NO_VERIFIED("GETCWD"); 
+
+    execution_private_variant_extra(ths, public, private, &result, public->regs.arg1);  
+
+    printf("[ PUBLIC  ] getcwd(%lx, %ld) = %ld\n", public->regs.arg0,  public->regs.arg1,  result.result); 
+    printf("[ PRIVATE ] getcwd(%lx, %ld) = %ld\n", private->regs.arg0, private->regs.arg1, result.result); 
+
+    return; 
+}
+
+void server_getuid( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+
+    if ( public->syscall_num == private->syscall_num)
+        SYSCALL_VERIFIED("GETUID"); 
+    else 
+        SYSCALL_NO_VERIFIED("GETUID"); 
+
+    execution_private_variant(ths, public, private, &result);  
+
+    printf("[ PUBLIC  ] getuid() = %ld\n", result.result); 
+    printf("[ PRIVATE ] getuid() = %ld\n", result.result); 
+
+    return; 
+}
+
+void server_stat( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+    struct stat  buffer_stat; 
+    char *private_buf =NULL, *public_buf=NULL;
+    size_t size =0; 
+
+    DPRINT(DEBUG_INFO, " STAT\n"); 
+
+    RESET(&buffer_stat, sizeof(struct stat)); 
+    CLEAN_RES(&result); 
+
+    assert( public->syscall_num == __NR_stat && private->syscall_num == __NR_stat); 
+    assert( public->extra == private->extra); 
+
+    size = public->extra; 
+    public_buf   = calloc(size, 1); 
+    private_buf  = calloc(size, 1);
+    get_extra_arguments(ths->fds[PUBLIC_UNTRUSTED],public_buf, ths->fds[PRIVATE_UNTRUSTED], private_buf, size); 
+
+    if (!strncmp(public_buf, private_buf, size))
+        SYSCALL_VERIFIED("STAT"); 
+    else 
+        SYSCALL_NO_VERIFIED("STAT"); 
+
+    execution_private_variant_extra(ths, public, private, &result, sizeof( struct stat));  
+
+    printf("[ PUBLIC  ] stat(%s, %lx) = %ld\n", public_buf,  public->regs.arg0,  result.result); 
+    printf("[ PRIVATE ] stat(%s, %lx) = %ld\n", private_buf, private->regs.arg0, result.result); 
+
+    free(public_buf); 
+    free(private_buf);
+
+    return; 
+}
+
+
+
+/*void server_stat( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {*/
+
+    /*printf("[ PUBLIC  ] write(%ld, %lx, %ld) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); */
+    /*printf("[ PRIVATE ] write(%ld, %lx, %ld) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); */
+
+    /*return; */
+/*}*/
+
 /********************************************************************/
 
 /************** INSTALL SERVER HANDLER *****************************/ 
@@ -873,11 +1148,16 @@ void initialize_server_handler() {
       { __NR_open,           server_open       },
       { __NR_openat,         server_openat     },
       { __NR_fstat,          server_fstat      },
+      { __NR_stat,           server_stat       },
       { __NR_getdents,       server_getdents   },
       { __NR_mmap,           server_mmap       },
       { __NR_close,          server_close      },
       { __NR_write,          server_write      },
       { __NR_read,           server_read       }, 
+      { __NR_ioctl,          server_ioctl      }, 
+      { __NR_getpid,         server_getpid     }, 
+      { __NR_getcwd,         server_getcwd     }, 
+      { __NR_getuid,         server_getuid     }, 
    }; 
 
    syscall_table_server_ = (struct server_handler *)malloc( MAX_SYSTEM_CALL * (sizeof( struct server_handler))); 

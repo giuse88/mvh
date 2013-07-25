@@ -176,7 +176,7 @@ int  trusted_thread(void * arg)
     nread=recvmsg(local_info.fd_remote_process, &msg, 0); 
 
     if ((nread < (int)SIZE_HEADER)  || request.cookie != local_info.monitored_thread_id){ 
-        DPRINT(DEBUG_INFO, "Trusted thread %ld cannot read the argumnt of %d, cookie %d\n",
+        DPRINT(DEBUG_INFO, "Trusted thread %ld cannot read the ARGUMEN of %d, cookie %d\n",
                 syscall(SYS_gettid), request.syscall_num, request.cookie);  
         die("Failed read system call arguments"); 
     }

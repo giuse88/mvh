@@ -5,6 +5,8 @@
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <unistd.h> 
+#include <termios.h>
+#include <sys/ioctl.h> 
 
 
 ssize_t receive_result_with_extra(int fd, struct syscall_result * result,  char * buf, size_t extra_size) { 
@@ -16,10 +18,13 @@ ssize_t receive_result_with_extra(int fd, struct syscall_result * result,  char 
 
     ASYNC_CALL(read(fd, result, SIZE_RESULT), transfered_result);
     assert(transfered_result == SIZE_RESULT); 
-   
-    //read buffer
+
     left = extra_size;
     ptr = buf;
+
+    // temp  
+    if ( (int)result->result < 0 )
+        return transfered_result; 
 
     do { 
       temp = read(fd,ptr,left);       
@@ -49,6 +54,9 @@ ssize_t send_result_with_extra(int fd, struct syscall_result * result, char * bu
     //read buffer
     left = extra_size;
     ptr = buf;
+
+    if ((int)result->result < 0) 
+        return transfered_result; 
 
     do { 
       temp = write(fd,ptr,left);       
@@ -125,4 +133,17 @@ void get_extra_arguments( int pub_fd , char* pub_buf, int priv_fd, char * priv_b
     if ((received =receive_extra(priv_fd, priv_buf,size)) < 0)
           die("Failed receiveing extra argument from private application"); 
     assert((size_t)received == size);
+}
+size_t get_size_from_cmd(int request) { 
+  // ugly 
+  switch (request) {
+     case  TCGETS:
+    /*0x00005401   TCGETS           struct termios * */
+        return sizeof(struct termios); 
+    case  FIONREAD : 
+    /*FIONREAD         int **/
+        return sizeof(int ); 
+    default : 
+      return 0; 
+  }
 }
