@@ -269,7 +269,9 @@ void server_open ( struct thread_group* ths, const struct syscall_header * publi
    ssize_t transfered =-1; 
 
    CLEAN_RES(&result); 
-   
+ 
+   printf("%lu %lu\n", public->extra, private->extra); 
+
    assert( public->syscall_num == __NR_open && private->syscall_num == __NR_open); 
    assert( public->extra == private->extra); 
    
@@ -410,7 +412,7 @@ void server_mmap ( struct thread_group* ths, const struct syscall_header * publi
   if ((transfered = receive_extra(ths->fds[PRIVATE_TRUSTED], buf, file_size)) < 0)
       die("Receive extra FILE"); 
   
-  printf(" Transfered %d, File %d\n", transfered, file_size); 
+  printf(" Transfered %d, File %lu\n", transfered, file_size); 
   assert( transfered == private_result.extra ); 
   DPRINT(DEBUG_INFO, "File received correctly size %d\n", transfered);
   
@@ -552,9 +554,7 @@ void server_exit_group ( struct thread_group* ths, const struct syscall_header *
 void server_read ( struct thread_group* ths, const struct syscall_header * public , const struct syscall_header * private){
 
     struct syscall_result result; 
-    char * buf = NULL; 
     size_t size=0; 
-    ssize_t transfered=0;  
 
     DPRINT(DEBUG_INFO, "Start fstat handler\n"); 
 
@@ -562,41 +562,22 @@ void server_read ( struct thread_group* ths, const struct syscall_header * publi
     assert( public->syscall_num == __NR_read  && private->syscall_num == __NR_read); 
     
     // reading from the standard input
-    if ( public->regs.arg0 == private->regs.arg0 && 
-         IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
+    if ((public->regs.arg0 == private->regs.arg0) && 
+         (public->regs.arg2 == private->regs.arg2))
+       SYSCALL_VERIFIED("READ"); 
+    else 
+       SYSCALL_NO_VERIFIED("READ"); 
+         
+    if (IS_STD_FD(public->regs.arg0)) {   
          DPRINT(DEBUG_INFO, "READ invoked with default file descriptor\n"); 
          server_default(ths, public, private);
          return;
     } 
-    
-    if ((get_private_fd(ths,public->regs.arg0) == (int)private->regs.arg0) && 
-        (get_public_fd(ths,private->regs.arg0) == (int)public->regs.arg0) && 
-        public->regs.arg2 == private->regs.arg2)
-        SYSCALL_VERIFIED("READ"); 
-    else 
-        SYSCALL_NO_VERIFIED("READ"); 
-
+        
     CLEAN_RES(&result);
     size = public->regs.arg2; 
-    buf = malloc(size);
-    
-    // sends the request to the private application 
-    if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
-            die("failed send request public trusted thread");
-    //receive result with extra 
-    if ( (transfered=receive_result_with_extra(ths->fds[PRIVATE_TRUSTED], &result, buf, size)) < 0) 
-        die("Error receiving result(READ)"); 
-    assert((size_t)transfered == (SIZE_RESULT + size) ); 
-   
-   // send results to the untrusted thread private  
-    if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], &result) < 0)
-        die("Failed send request public trusted thread");
-    result.cookie = public->cookie; 
-    if((transfered=send_result_with_extra(ths->fds[PUBLIC_UNTRUSTED], &result, buf, size)) < 0)
-        die("Failed sending result (READ)"); 
-   
-    assert((size_t)transfered == (SIZE_RESULT + size) ); 
-    free(buf); 
+  
+    execution_private_variant_extra(ths, public, private, &result, size);  
 
     printf("[ PUBLIC  ] read(%ld, 0x%lx, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1,  public->regs.arg2,  result.result); 
     printf("[ PRIVATE ] read(%ld, 0x%lx, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
@@ -607,10 +588,7 @@ void server_read ( struct thread_group* ths, const struct syscall_header * publi
 void server_getdents ( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private){
 
     struct  syscall_result result; 
-    char *  buf = NULL; 
-    size_t  size_buf = 0; 
-    ssize_t transfered =-1; 
-    
+   
     DPRINT(DEBUG_INFO, "Start GETDENTS handler\n"); 
 
     // sanity checks 
@@ -883,7 +861,7 @@ void server_getuid( struct thread_group * ths, const struct syscall_header * pub
 
     struct syscall_result result; 
 
-    if ( public->syscall_num == private->syscall_num)
+    if ( public->syscall_num == __NR_getuid && private->syscall_num== __NR_getuid)
         SYSCALL_VERIFIED("GETUID"); 
     else 
         SYSCALL_NO_VERIFIED("GETUID"); 
@@ -932,14 +910,26 @@ void server_stat( struct thread_group * ths, const struct syscall_header * publi
     return; 
 }
 
+void server_lseek( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
 
-/*void server_stat( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {*/
+    struct syscall_result result; 
 
-    /*printf("[ PUBLIC  ] write(%ld, %lx, %ld) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); */
-    /*printf("[ PRIVATE ] write(%ld, %lx, %ld) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); */
+    assert(public->syscall_num == private->syscall_num); 
 
-    /*return; */
-/*}*/
+    if ( (public->regs.arg0 == private->regs.arg0) && 
+         (public->regs.arg1 == private->regs.arg1) &&
+         (public->regs.arg2 == private->regs.arg2) )
+        SYSCALL_VERIFIED(" LSEEK"); 
+    else 
+        SYSCALL_NO_VERIFIED("LSEEK"); 
+
+    execution_private_variant(ths, public, private, &result);  
+
+    printf("[ public  ] lseek(%ld, %lx, %lx) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); 
+    printf("[ private ] lseek(%ld, %lx, %lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
+
+    return; 
+}
 
 /********************************************************************/
 
@@ -951,20 +941,21 @@ void initialize_server_handler() {
        void (*handler)(struct thread_group *  ,const struct syscall_header*,const struct  syscall_header *); 
    } default_policy [] = {
         /*server handler */
-    /*  { __NR_exit_group,     server_exit_group },*/
-      /*{ __NR_open,           server_open       },*/
-      /*{ __NR_openat,         server_openat     },*/
-      /*{ __NR_fstat,          server_fstat      },*/
-      /*{ __NR_stat,           server_stat       },*/
-      /*{ __NR_getdents,       server_getdents   },*/
+      { __NR_exit_group,     server_exit_group },
+      { __NR_open,           server_open       },
+      { __NR_openat,         server_openat     },
+      { __NR_fstat,          server_fstat      },
+      { __NR_stat,           server_stat       },
+      { __NR_getdents,       server_getdents   },
       { __NR_mmap,           server_mmap       },
-      /*{ __NR_close,          server_close      },*/
-      /*{ __NR_write,          server_write      },*/
-      /*{ __NR_read,           server_read       }, */
-      /*[>{ __NR_ioctl,          server_ioctl      }, <]*/
-      /*{ __NR_getpid,         server_getpid     }, */
-      /*{ __NR_getcwd,         server_getcwd     }, */
-      /*{ __NR_getuid,         server_getuid     }, */
+      { __NR_close,          server_close      },
+      { __NR_write,          server_write      },
+      { __NR_read,           server_read       }, 
+      { __NR_lseek,          server_lseek      }, 
+      /*{ __NR_ioctl,          server_ioctl      }, */
+      { __NR_getpid,         server_getpid     }, 
+      { __NR_getcwd,         server_getcwd     }, 
+      { __NR_getuid,         server_getuid     }, 
    }; 
 
    syscall_table_server_ = (struct server_handler *)malloc( MAX_SYSTEM_CALL * (sizeof( struct server_handler))); 
