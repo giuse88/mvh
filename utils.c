@@ -22,9 +22,9 @@ ssize_t receive_result_with_extra(int fd, struct syscall_result * result,  char 
     left = extra_size;
     ptr = buf;
 
-    // temp  
-    if ( (int)result->result < 0 )
-        return transfered_result; 
+    /*// temp  */
+    /*if ( (int)result->result < 0 )*/
+        /*return transfered_result; */
 
     do { 
       temp = read(fd,ptr,left);       
@@ -55,17 +55,21 @@ ssize_t send_result_with_extra(int fd, struct syscall_result * result, char * bu
     left = extra_size;
     ptr = buf;
 
-    if ((int)result->result < 0) 
-        return transfered_result; 
+    /*fprintf(stderr,"%d\n", left);*/
+    
+  /*  if ((int)result->result < 0) */
+        /*return transfered_result; */
 
     do { 
+    /*fprintf(stderr,"%d\n", left);*/
       temp = write(fd,ptr,left);       
+    /*fprintf(stderr,"%d %d\n", left, temp);*/
       if ( temp < 0 && (errno==EAGAIN || errno == EINTR || errno == EWOULDBLOCK)) 
         continue; 
       else if ( temp < 0 )
-          die("Error receiveing data recvmsg (receive_result_with_extra)"); 
+          die("Error sending result  (send_result_with_extra)"); 
       left -= temp; 
-      ptr  += temp; 
+      ptr   += temp; 
       transfered += temp; 
       /*fprintf(stderr,"%d\n", left);*/
     } while(left > 0); 
@@ -92,7 +96,7 @@ ssize_t receive_extra(int fd , char * buf, size_t size){
       left -= temp; 
       ptr  += temp; 
       transfered += temp;
-      /*fprintf(stderr, "%d\n", temp); */
+  //    fprintf(stderr, "%d\n", temp); 
     } while(left > 0); 
 
     assert(transfered == (int)size);
@@ -123,7 +127,7 @@ ssize_t send_extra  (int fd, char * buf, size_t size) {
     assert(transfered == (int)size);
     return transfered; 
 } 
-void get_extra_arguments( int pub_fd , char* pub_buf, int priv_fd, char * priv_buf, size_t size){
+ssize_t get_extra_arguments( int pub_fd , char* pub_buf, int priv_fd, char * priv_buf, size_t size){
     ssize_t received =0; 
 
     if ((received=receive_extra(pub_fd, pub_buf,size)) < 0)
@@ -133,6 +137,7 @@ void get_extra_arguments( int pub_fd , char* pub_buf, int priv_fd, char * priv_b
     if ((received =receive_extra(priv_fd, priv_buf,size)) < 0)
           die("Failed receiveing extra argument from private application"); 
     assert((size_t)received == size);
+    return received; 
 }
 size_t get_size_from_cmd(int request) { 
   // ugly 
@@ -142,7 +147,9 @@ size_t get_size_from_cmd(int request) {
         return sizeof(struct termios); 
     case  FIONREAD : 
     /*FIONREAD         int **/
-        return sizeof(int ); 
+        return sizeof(int );
+    case TIOCGWINSZ:
+        return sizeof(struct winsize);
     default : 
       return 0; 
   }

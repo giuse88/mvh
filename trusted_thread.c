@@ -181,7 +181,7 @@ int  trusted_thread(void * arg)
         die("Failed read system call arguments"); 
     }
 
-    DPRINT(DEBUG_INFO, ">>> Trusted threaad %d request for  %s\n",
+    DPRINT(DEBUG_INFO, ">>> Trusted thread %d request for  %s\n",
            local_info.my_tid, syscall_names[request.syscall_num]); 
 
     // HANDLER 

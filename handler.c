@@ -25,6 +25,15 @@
 #define TRUSTED_START(arg)   DPRINT(DEBUG_INFO, ">>> %s Start trusted handler\n",   arg);
 #define TRUSTED_END(arg)     DPRINT(DEBUG_INFO, ">>> %s End   trusted handler\n",   arg);
 
+off_t get_file_size (int fd) {
+
+  struct stat file; 
+  if ( fstat(fd, &file) < 0) 
+      die("Fstat");
+  return file.st_size; 
+}
+
+
 int receive_syscall_result (struct syscall_result * res){
     int received;
     int fd = get_local_fd(); 
@@ -118,7 +127,7 @@ u64_t untrusted_default(const ucontext_t *ctx ){
    
     if (send_syscall_header(ctx, extra) < 0)
         die("Failed to send syscall_header"); 
-  
+
     if(receive_syscall_result(&result) < 0 )
        die("Failed recieve_syscall_result"); 
 
@@ -133,7 +142,7 @@ void trusted_default (int fd, const struct syscall_header *header){
   memset(&result, 0, sizeof(result)); 
   memset(&request, 0, sizeof(request)); 
 
-  DPRINT(DEBUG_INFO, ">>> Start DEFAULT trusted thread for system call < %s > \n",
+  DPRINT(DEBUG_INFO, ">>> DEFAULT trusted thread for system call <%s> START \n",
             syscall_names[header->syscall_num]);
 
   request.syscall_identifier = header->syscall_num; 
@@ -145,7 +154,7 @@ void trusted_default (int fd, const struct syscall_header *header){
 
   send_syscall_result(fd, &result); 
 
-  DPRINT(DEBUG_INFO, ">>> End DEFAULT trusted thread for system call < %s > \n",
+  DPRINT(DEBUG_INFO, ">>> DEFAULT trusted thread for system call <%s> END \n",
             syscall_names[header->syscall_num]);
  
 }
@@ -187,54 +196,40 @@ u64_t untrusted_open(const ucontext_t * uc ){
    int path_length = -1; 
    char * path = (char *)uc->uc_mcontext.gregs[REG_ARG0]; 
    u64_t extra =0;  
-   struct iovec io[1];
-   struct msghdr msg; 
-   int sent =-1; 
 
-   DPRINT(DEBUG_INFO, "--- START OPEN HANDLER\n"); 
-  
-   memset(&msg, 0, sizeof(msg));
-   memset(&result, 0, SIZE_RESULT); 
+   UNTRUSTED_START("OPEN"); 
+   
+   CLEAN_RES(&result); 
 
-   // the compiler should ensure there is a null after the last character
    path_length = strlen(path) + 1;
    extra = path_length; 
-  
-   // file path 
-   io[0].iov_len=path_length; 
-   io[0].iov_base = (char *)path; 
-
-   msg.msg_iov=io; 
-   msg.msg_iovlen=1; 
 
    if (send_syscall_header(uc, extra)< 0)
        die("Send syscall header"); 
 
-   sent = sendmsg(get_local_fd(), &msg, 0); 
-   assert(sent ==  path_length);
-   
-   // wait for the result 
+  if (send_extra(get_local_fd(), path, path_length) < 0) 
+       die("Failed send extra (OPEN)"); 
+  
   if(receive_syscall_result(&result) < 0 )
-       die("Failede get_syscall_result"); 
+       die("Failede get_syscall_result(OPEN)"); 
+ 
+  DPRINT(DEBUG_INFO, "OPEN(\"%s\"(%d),0x%X)=%d\n", path, path_length,
+     (unsigned int)  uc->uc_mcontext.gregs[REG_ARG1], (int)result.result); 
 
-  DPRINT(DEBUG_INFO, "--- END OPEN HANDLER\n"); 
+  UNTRUSTED_END("OPEN"); 
+
   return (u64_t)result.result; 
 }
 
-/* FSSTAT 
- * int fstat(int fd, struct stat *buf);
- */ 
 u64_t untrusted_fstat(const ucontext_t * uc ){
 
-  struct iovec io[2];
-  struct msghdr msg; 
-  int received =-1; 
   struct syscall_result res; 
   int fd = get_local_fd(); 
-  int cookie = get_local_tid(); 
   u64_t extra =0;  
-  
-  DPRINT(DEBUG_INFO, "--- FSTAT Start untrusted handler\n"); 
+  ssize_t transfered=-1; 
+  struct stat * stat_info = NULL; 
+
+  UNTRUSTED_START("FSTAT"); 
 
   if (IS_STD_FD(uc->uc_mcontext.gregs[REG_ARG0]))
       return untrusted_default(uc); 
@@ -242,41 +237,29 @@ u64_t untrusted_fstat(const ucontext_t * uc ){
   if (send_syscall_header(uc, extra)< 0)
        die("Send syscall header"); 
 
-   // it receives the result header plus the struct fstat 
-   // whihc has to be conpied in the correct memory position 
-  CLEAN_MSG(&msg); 
-  CLEAN_RES(&res); 
+  stat_info = (struct stat *)uc->uc_mcontext.gregs[REG_ARG1]; 
+  transfered=receive_result_with_extra(fd, &res, (char *)stat_info, sizeof ( struct stat) ); 
 
-  io[0].iov_len = SIZE_RESULT; 
-  io[0].iov_base = &res; 
+  if ( transfered < 0) 
+      die("Receive resutl with extra FSTAT"); 
+  
+  CHECK(transfered, sizeof(struct stat) + SIZE_RESULT, res.result); 
 
-  // update the value
-  io[1].iov_len  = sizeof(struct stat); 
-  io[1].iov_base = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
-
-  msg.msg_iov=io;     
-  msg.msg_iovlen=2; 
-
-  INTR_RES(recvmsg(fd, &msg,0), received); 
+  DPRINT(DEBUG_INFO, "FSTAT(%ld, 0x%lX) = %ld\n", (long int)uc->uc_mcontext.gregs[REG_ARG0], (unsigned long)stat_info, res.result); 
  
-  if ( received < 0) 
-      die("Recvmsg failed result stat"); 
-
-  assert(res.cookie == cookie); 
-  assert(received == SIZE_RESULT + sizeof( struct stat)); 
-
-  DPRINT(DEBUG_INFO, "--- FSTAT End   untrusted handler\n"); 
+  UNTRUSTED_END("FSTAT"); 
   return (u64_t)res.result; 
 }
 void  trusted_fstat   ( int fd, const struct syscall_header * header) {
 
   struct syscall_result result; 
   struct syscall_request request;
+  ssize_t transfered =-1; 
 
   CLEAN_RES(&result); 
   CLEAN_REQ(&request); 
 
-  DPRINT(DEBUG_INFO, ">>> FSTAT Start trusted handler\n");
+  TRUSTED_START("FSTAT"); 
 
   assert(header->syscall_num == __NR_fstat); 
 
@@ -292,30 +275,15 @@ void  trusted_fstat   ( int fd, const struct syscall_header * header) {
   result.cookie = header->cookie; 
   result.extra = 0; 
 
-  // send results with the struct as well 
-  struct iovec io[2];
-  struct msghdr msg; 
-  int transfered=-1; 
-
-  CLEAN_MSG(&msg);
-  memset(io, 0, sizeof(io)); 
-    
-  // result header 
-  io[0].iov_len=SIZE_RESULT; 
-  io[0].iov_base=&result;
-  // result fstat
-  io[1].iov_len = sizeof(struct stat); 
-  io[1].iov_base = (char *)header->regs.arg1; 
-    // IOV struct 
-  msg.msg_iov=io;
-  msg.msg_iovlen=2; 
- 
-  transfered=sendmsg(fd,&msg, 0); 
+  transfered =send_result_with_extra(fd, &result, (char *)header->regs.arg1, sizeof (struct stat));  
   if ( transfered < 0) 
-      die("Recvmsg (Fstat handler)"); 
-  assert(transfered == SIZE_RESULT +sizeof(struct stat)); 
+      die("recvmsg (fstat handler)"); 
+
+  CHECK(transfered, sizeof(struct stat) + SIZE_RESULT, result.result); 
   
-  DPRINT(DEBUG_INFO, ">>> FSTAT End   trusted handler\n");
+  DPRINT(DEBUG_INFO, "FSTAT(%ld, 0x%lX) = %ld\n", header->regs.arg0, header->regs.arg1, result.result); 
+  
+  TRUSTED_END("FSTAT"); 
   return; 
 }
 
@@ -328,12 +296,13 @@ u64_t untrusted_mmap (const ucontext_t * uc) {
     
     struct syscall_result result;
     u64_t extra = 0;  
-    int transfered =-1, size =-1; 
+    ssize_t transfered =-1;
+    size_t size =0; 
     char *buf = NULL; 
     unsigned int flags =0; 
 
-    DPRINT(DEBUG_INFO, "MMPA Start untrusted handler\n");
- 
+    UNTRUSTED_START("MMPA"); 
+
     flags= uc->uc_mcontext.gregs[REG_ARG3];
 
     if (flags & MAP_ANONYMOUS) 
@@ -346,17 +315,24 @@ u64_t untrusted_mmap (const ucontext_t * uc) {
        die("Failed recieve_syscall_result"); 
           
     buf=(char *)result.result;
-    size = (long)uc->uc_mcontext.gregs[REG_ARG1]; 
-    
-    DPRINT(DEBUG_INFO, "%d bytes mapped at %p \n", size, buf);  
+    size = result.extra; 
 
 
+    DPRINT(DEBUG_INFO, "--- %lu bytes mapped at %p \n", size, buf);  
     memset(buf, 0, size); 
+    DPRINT(DEBUG_INFO, "--- Memory verified\n");
 
     if((transfered=receive_extra(get_local_fd(), buf, size))< 0 ) 
             die("Failed extra result"); 
 
-    DPRINT(DEBUG_INFO, "Transfered data %d \n", transfered);
+    CHECK(transfered, size, 0);  
+    DPRINT(DEBUG_INFO, "--- Transfered data : %ld \n", transfered);
+
+    DPRINT(DEBUG_INFO, "mmap(0x%lX, %lu, 0x%lX, 0x%lX, %ld, %lu) = 0x%lX\n", 
+       (long unsigned) uc->uc_mcontext.gregs[REG_ARG0], (long unsigned)uc->uc_mcontext.gregs[REG_ARG1],
+       (long unsigned) uc->uc_mcontext.gregs[REG_ARG2], (long unsigned)uc->uc_mcontext.gregs[REG_ARG3],
+       (long) uc->uc_mcontext.gregs[REG_ARG4], (long unsigned)uc->uc_mcontext.gregs[REG_ARG5],
+        result.result); 
 
     return (u64_t)result.result; 
   
@@ -377,7 +353,7 @@ void  trusted_mmap   ( int fd, const struct syscall_header * header) {
       return; 
   }
 
-  DPRINT(DEBUG_INFO, ">>> MMPA Start trusted handler\n");
+  TRUSTED_START("MMPA");
   
   assert(header->syscall_num == __NR_mmap); 
   request.syscall_identifier = header->syscall_num; 
@@ -385,18 +361,39 @@ void  trusted_mmap   ( int fd, const struct syscall_header * header) {
   
   result.result = do_syscall(&request);
   result.cookie = header->cookie; 
-  result.extra = 0; 
 
   char * buf = (char *)result.result; 
-  int   map_size = header->regs.arg1; 
+  int file_fd = header->regs.arg4;
+  size_t size_file = get_file_size(file_fd); 
+  size_t map_size = header->regs.arg1; 
+  size_t real_map_size = (map_size > size_file ) ? size_file : map_size;  
 
-  int transfered = send_result_with_extra(fd, &result, buf, map_size);  
+  DPRINT(DEBUG_INFO, ">>> MMAP  result %lx, Size Memory area %lu\n", result.result, map_size); 
+  DPRINT(DEBUG_INFO, ">>> Real size of the file in memory %ld\n", size_file); 
+  DPRINT(DEBUG_INFO, ">>> Real amount of memory mapped %ld\n", real_map_size); 
+  
+  // sanity check 
+  int j=0;
+  for (int i=0; i < real_map_size; i++)
+    j=buf[i]; 
+  j+=j; 
 
-  DPRINT(DEBUG_INFO, ">>> Transfered %d\n", transfered); 
+  DPRINT(DEBUG_INFO, ">>> Memory verified\n"); 
+  result.extra = real_map_size; 
+  int transfered = send_result_with_extra(fd, &result, buf, real_map_size);  
+  DPRINT(DEBUG_INFO, ">>> Transfered %d\n", transfered);
+  
+  assert( transfered == real_map_size + SIZE_RESULT); 
 
-  DPRINT(DEBUG_INFO, ">>> MMPA End   trusted handler\n");
+  DPRINT(DEBUG_INFO, "mmap(%lX, %ld, 0x%lX, 0x%lx, %ld, %lu) = 0x%lX\n",
+      header->regs.arg0, header->regs.arg1,
+      header->regs.arg2, header->regs.arg3,
+      header->regs.arg4, header->regs.arg5,
+      result.result); 
+  TRUSTED_END("MMPA");
 
-};
+  return; 
+}
 
 /** OPENAT
   #include <fcntl.h>
@@ -614,14 +611,12 @@ u64_t untrusted_ioctl(const ucontext_t * uc ){
   int cookie = get_local_tid(); 
   char *buf = NULL; 
   size_t size = 0; 
-  int extra =0; 
+  int extra =0;
+
   UNTRUSTED_START("IOCTL"); 
 
  /* buf = (char *)uc->uc_mcontext.gregs[REG_ARG2]; */
   /*size = get_size_from_cmd((int)uc->uc_mcontext.gregs[REG_ARG1]); */
-
-  /*for (int i=0; i< size; i++)*/
-    /*DPRINT(DEBUG_INFO, "%d : %X\n", i, *(buf + i)); */
 
 
   /*untrusted_default(uc); */

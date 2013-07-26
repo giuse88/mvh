@@ -157,7 +157,7 @@ void  * handle_thread_pair(void * arg) {
    memset(ths->pollfds, 0, sizeof(struct pollfd)); 
  
    for (int i=0; i < NFDS; i++){
-        make_socket_non_blocking(ths->fds[i]); 
+//        make_socket_non_blocking(ths->fds[i]); 
         printf("%d : %d\n",i, ths->fds[i]); 
         ths->pollfds[i].fd = ths->fds[i]; 
         ths->pollfds[i].events =  POLLIN; /* there is data to read */ 
@@ -202,24 +202,24 @@ void  * handle_thread_pair(void * arg) {
     /* 
      * = Read from the system call requests and call the correct handler 
      */ 
-    res=poll(ths->pollfds,NFDS+1,SERVER_TIMEOUT); 
+//    res=poll(ths->pollfds,NFDS+1,SERVER_TIMEOUT); 
 
-    if (res == 0)
-        irreversible_error("Connection Time out"); 
-    else if ( res < 0 )
-        die("pool"); 
+ /*   if (res == 0)*/
+        /*irreversible_error("Connection Time out"); */
+    /*else if ( res < 0 )*/
+        /*die("pool"); */
    
     // there must be at maximun three  fd ready  
-    assert( res <= 2 ); 
+    /*assert( res <= 2 ); */
  
-   if (is_timer_set && ths->pollfds[TIMER_FD].revents) {
-       if (read(ths->timer, &num_expirations, sizeof(uint64_t)) < 0)
-            die("Read timer failed"); 
-       printf(ANSI_COLOR_RED ">>>>>>>>>>>>>>>>> Temoral window expired %ld , possible attack <<<<<<<<<<<<<<<<<<<<" ANSI_COLOR_RESET "\n", num_expirations);
-       DPRINT(DEBUG_INFO, "Value %ld , %ld\n", (long)(t1-t2)*1000 , (long)(t2-t1)*1000);
-   }
+  /* if (is_timer_set && ths->pollfds[TIMER_FD].revents) {*/
+       /*if (read(ths->timer, &num_expirations, sizeof(uint64_t)) < 0)*/
+            /*die("Read timer failed"); */
+       /*printf(ANSI_COLOR_RED ">>>>>>>>>>>>>>>>> Temoral window expired %ld , possible attack <<<<<<<<<<<<<<<<<<<<" ANSI_COLOR_RESET "\n", num_expirations);*/
+       /*DPRINT(DEBUG_INFO, "Value %ld , %ld\n", (long)(t1-t2)*1000 , (long)(t2-t1)*1000);*/
+   /*}*/
 
-   if ( !pub_req && ths->pollfds[PUBLIC_UNTRUSTED].revents) {
+   if ( !pub_req /*&& <][>ths->pollfds[PUBLIC_UNTRUSTED].revents*/) {
         pub_req = true; 
         receive_syscall_header(ths->fds[PUBLIC_UNTRUSTED], &public_header); 
         DPRINT(DEBUG_INFO, "%lu Received request %d from %d for system call < %s > over %d\n", (t1=timestamp()),
@@ -229,7 +229,7 @@ void  * handle_thread_pair(void * arg) {
         continue; 
         }
 
-   if (!priv_req && ths->pollfds[PRIVATE_UNTRUSTED].revents) {
+   if (!priv_req /*&& ths->pollfds[PRIVATE_UNTRUSTED].revents*/) {
         priv_req = true; 
         receive_syscall_header(ths->fds[PRIVATE_UNTRUSTED], &private_header); 
         DPRINT(DEBUG_INFO, "%lu Received request %d from %d for system call < %s > over %d\n", (t2=timestamp()), 

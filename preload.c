@@ -16,7 +16,7 @@ int wrap_main(int argc, char **argv, char **environ)
   if (start_sandbox())
       die("Failed start delegating mechanism"); 
  
-  DPRINT(DEBUG_INFO, " === LD_PRELOAD ends === \n");
+  DPRINT(DEBUG_INFO, " === LD_PRELOAD ends === \n\n");
 
   return (*realmain)(argc, argv, environ);
 }
