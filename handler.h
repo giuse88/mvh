@@ -85,4 +85,7 @@ extern u64_t untrusted_stat_priv(const ucontext_t * uc );
 extern u64_t untrusted_stat_pub(const ucontext_t * uc );
 extern void  trusted_stat   ( int fd, const struct syscall_header * header); 
 
+extern u64_t untrusted_setsockopt(const ucontext_t * uc ); 
+extern u64_t untrusted_bind(const ucontext_t * uc ); 
+
 #endif /* end of include guard: HANDLER_H */

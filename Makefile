@@ -1,7 +1,7 @@
 CC=gcc 
 CFLAGS = -g -std=gnu99 -O0 -Wall -Wextra -Wno-missing-field-initializers  \
          -Wno-unused-parameter -I.  
-DEBUG= -DCOLOR  #-DDEBUG 
+DEBUG= -DCOLOR  -DDEBUG 
 LDFLAGS=-ldl -g -lpthread  
 PWD=`pwd`
 LIB=

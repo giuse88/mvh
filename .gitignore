@@ -10,7 +10,6 @@
 *.so
 *.so.*
 *.dylib
-
 # Executables
 *.exe
 *.out
@@ -23,3 +22,4 @@ mvh
 mvh_server
 tags
 .*
+*.txt

@@ -8,7 +8,7 @@
                          ( arg == STDERR_FILENO) || \
                          ( arg ==  STDIN_FILENO) )
 
-#define CHECK(__transfered, __size, __result) assert( ((size_t)__transfered == __size) || (((int)__result < 0) && ((size_t)__transfered == SIZE_RESULT)))
+#define CHECK(__transfered, __size, __extra) assert( ((size_t)__transfered == __size) || ((!__extra ) && ((size_t)__transfered == SIZE_RESULT)))
 
 ssize_t receive_result_with_extra (int, struct syscall_result *, char *, size_t); 
 ssize_t send_result_with_extra    (int, struct syscall_result *, char *, size_t); 

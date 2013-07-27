@@ -22,9 +22,8 @@ ssize_t receive_result_with_extra(int fd, struct syscall_result * result,  char 
     left = extra_size;
     ptr = buf;
 
-    /*// temp  */
-    /*if ( (int)result->result < 0 )*/
-        /*return transfered_result; */
+    if (!result->extra)
+        return transfered_result; 
 
     do { 
       temp = read(fd,ptr,left);       
@@ -47,6 +46,8 @@ ssize_t send_result_with_extra(int fd, struct syscall_result * result, char * bu
     int left = 0, transfered=0, temp=0, transfered_result =0; 
     char * ptr = NULL; 
 
+
+    result->extra = extra_size; 
     // send  struct result 
     ASYNC_CALL(write(fd, result, SIZE_RESULT), transfered_result);
     assert(transfered_result == SIZE_RESULT); 
@@ -55,12 +56,7 @@ ssize_t send_result_with_extra(int fd, struct syscall_result * result, char * bu
     left = extra_size;
     ptr = buf;
 
-    /*fprintf(stderr,"%d\n", left);*/
-    
-  /*  if ((int)result->result < 0) */
-        /*return transfered_result; */
-
-    do { 
+        do { 
     /*fprintf(stderr,"%d\n", left);*/
       temp = write(fd,ptr,left);       
     /*fprintf(stderr,"%d %d\n", left, temp);*/
@@ -83,7 +79,6 @@ ssize_t receive_extra(int fd , char * buf, size_t size){
     int left = 0, transfered=0, temp=0; 
     char * ptr = NULL; 
 
-    //read buffer
     left = size;
     ptr = buf;
 
@@ -96,7 +91,6 @@ ssize_t receive_extra(int fd , char * buf, size_t size){
       left -= temp; 
       ptr  += temp; 
       transfered += temp;
-  //    fprintf(stderr, "%d\n", temp); 
     } while(left > 0); 
 
     assert(transfered == (int)size);

@@ -25,7 +25,7 @@ const struct policy public_policy[] = {
   --------------------------------------------------------------------------------  */ 
     { __NR_exit,            DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
     { __NR_exit_group,      DEFAULT_UNTRUSTED,         trusted_exit_group},
-    { __NR_open,            untrusted_open,            DEFAULT_TRUSTED},
+    { __NR_open,            untrusted_open,            NO_HANDLER},
     { __NR_openat,          untrusted_openat,          NO_HANDLER},
 /*     The trusted must be included  for the close system call*/
      //because some programs close the standard file descriptors 
@@ -35,13 +35,18 @@ const struct policy public_policy[] = {
     { __NR_getdents,        untrusted_getdents,        NO_HANDLER}, 
     { __NR_mmap,            untrusted_mmap,            DEFAULT_TRUSTED},
     { __NR_write,           untrusted_write,           DEFAULT_TRUSTED}, 
-    { __NR_read,            untrusted_read,            DEFAULT_TRUSTED}, 
+    { __NR_read,            untrusted_read,            trusted_read   }, 
     { __NR_lseek,           DEFAULT_UNTRUSTED,         NO_HANDLER     },
     //{ __NR_ioctl,           untrusted_ioctl,           DEFAULT_TRUSTED}, 
     //{ __NR_munmap,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED}, 
     { __NR_getpid,          DEFAULT_UNTRUSTED,         NO_HANDLER     }, 
     { __NR_getcwd,          untrusted_getcwd,          DEFAULT_TRUSTED}, 
     { __NR_getuid,          DEFAULT_UNTRUSTED,         NO_HANDLER     }, 
+    { __NR_fcntl,           DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
+    { __NR_socket,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},  
+    { __NR_bind,            untrusted_bind,            DEFAULT_TRUSTED},  
+    { __NR_listen,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},  
+    { __NR_setsockopt,      untrusted_setsockopt,      DEFAULT_TRUSTED}, 
 };
 
 //PRIVATE APPLICATION
@@ -59,13 +64,18 @@ const struct policy private_policy[] = {
     { __NR_mmap,            DEFAULT_UNTRUSTED,         trusted_mmap  },
     { __NR_close,           DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
     { __NR_write,           untrusted_write,           DEFAULT_TRUSTED}, 
-    { __NR_read,            DEFAULT_UNTRUSTED,         trusted_read   }, 
+    { __NR_read,            untrusted_read,         trusted_read   }, 
     { __NR_lseek,           DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
     //{ __NR_ioctl,           DEFAULT_UNTRUSTED,         trusted_ioctl  }, 
     //{ __NR_munmap,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
     { __NR_getpid,          DEFAULT_UNTRUSTED,          NO_HANDLER     }, 
     { __NR_getcwd,          DEFAULT_UNTRUSTED,         trusted_getcwd  }, 
-    { __NR_getuid,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED }, 
+    { __NR_getuid,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED },
+    { __NR_fcntl,           DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED },
+    { __NR_socket,          DEFAULT_UNTRUSTED,         NO_HANDLER      },
+    { __NR_bind,            untrusted_bind,            NO_HANDLER      },  
+    { __NR_listen,          DEFAULT_UNTRUSTED,         NO_HANDLER      },  
+    { __NR_setsockopt,      untrusted_setsockopt,      NO_HANDLER      }, 
 };
  
 #endif /* end of include guard: POLICY_H */

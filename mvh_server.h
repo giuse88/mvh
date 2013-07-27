@@ -23,20 +23,20 @@ struct thread_pair {
 };    
 #define SIZE_THREAD_PAIR sizeof(struct thread_pair)
 
-typedef enum{EMPTY_FD=0, FILE_FD, SOCKED_FD} fd_type; 
-struct fd_pair{
+typedef enum{EMPTY_FD=0, FILE_FD, SOCKET_FD} fd_type; 
+struct fd_info{
     fd_type type;
-    int private; 
-    int public; 
+    process_visibility visibility; 
+    int fd; 
 }; 
 
 struct thread_group {
     int fds[NFDS];
     int timer; 
     struct pollfd pollfds[NFDS +1]; 
-    struct fd_pair fd_maps[MAX_FD]; 
     struct thread_pair public;
     struct thread_pair private;
+    struct fd_info fd_maps[MAX_FD]; 
     char * path; 
 }; 
 #define SIZE_THREAD_GROUP sizeof(struct thread_group)

@@ -4,6 +4,6 @@
 
 int main(int argc, const char *argv[])
 {
-  printf("PID %ld\n", syscall(__NR_getpid)); 
+  printf("PID %u\n", getpid()); 
   return 0;
 }

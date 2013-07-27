@@ -137,9 +137,10 @@ int receive_syscall_header( int fd, struct syscall_header * header) {
 
 void  * handle_thread_pair(void * arg) {
 
-    int res =-1; 
+   // int res =-1; 
     bool is_timer_set = false; 
-    uint64_t num_expirations =0, t1=0, t2 =0; 
+   // uint64_t num_expirations =0,
+     uint64_t t1=0, t2 =0; 
     struct thread_group * ths = (struct thread_group *)arg; 
 
     ths->fds[PUBLIC_TRUSTED]     = ths->public.trusted_fd; 

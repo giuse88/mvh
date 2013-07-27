@@ -24,11 +24,6 @@ struct server_handler * syscall_table_server_;
 
 #define ATTACK printf("ATTACK")
 
-void execution_private_variant(struct thread_group * ths, const struct syscall_header * public, const struct syscall_header * private, 
-                                     struct syscall_result * result);
-void execution_private_variant_extra(struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private, struct syscall_result * result,  size_t size); 
-
-
 
 // manage fd maps 
 int get_free_fd(const struct thread_group * ths) {
@@ -36,28 +31,36 @@ int get_free_fd(const struct thread_group * ths) {
         if (ths->fd_maps[i].type == EMPTY_FD)
             return i; 
     return -1; 
-} 
-int get_public_fd(const struct thread_group * ths, int private) {
+}
+int free_fd(struct thread_group * ths, int fd) {
     for (int i=0; i < MAX_FD; i++) 
-        if (ths->fd_maps[i].private == private)
-            return ths->fd_maps[i].public; 
+        if (ths->fd_maps[i].fd == fd) {
+          memset((void*)&ths->fd_maps[i], 0, sizeof(struct fd_info)); 
+          return 0; 
+        } 
     return -1; 
 }
-int get_private_fd(const struct thread_group *ths, int public) {
+bool is_fd_public(const struct thread_group *ths, int fd) {
     for (int i=0; i < MAX_FD; i++) 
-        if (ths->fd_maps[i].public == public)
-            return ths->fd_maps[i].private; 
-    return -1; 
+        if (ths->fd_maps[i].fd         == fd  && 
+            ths->fd_maps[i].visibility == PUBLIC)
+            return true; 
+    return  false; 
 }
-int free_fd(struct thread_group * ths, int private, int public){
-    for (int i=0; i < MAX_FD; i++)
-        if ( ths->fd_maps[i].private == private &&
-             ths->fd_maps[i].public == public)  {
-            memset(&ths->fd_maps[i],0, sizeof( struct fd_pair));
-            return SUCCESS; 
-        }
-    return -1; 
+bool is_fd_private(const struct thread_group *ths, int fd) {
+    for (int i=0; i < MAX_FD; i++) 
+        if (ths->fd_maps[i].fd         == fd  && 
+            ths->fd_maps[i].visibility == PRIVATE)
+            return true; 
+    return  false; 
 }
+process_visibility get_fd_visibility(const struct thread_group * ths, int fd) {
+  for (int i=0; i < MAX_FD; i++) 
+        if ( ths->fd_maps[i].fd == fd) 
+            return ths->fd_maps[i].visibility; 
+  return -1; 
+}
+
 
 /* Useful functions */ 
 void  syscall_info(const struct  syscall_header * head, const struct syscall_registers *reg, const struct  syscall_result *res, process_visibility vis) {
@@ -108,7 +111,6 @@ int forward_syscall_result ( int fd, const struct syscall_result * result) {
 
     io[0].iov_len=SIZE_RESULT; 
     io[0].iov_base= (char *)result; 
-
     msg.msg_iov=io; 
     msg.msg_iovlen=2; 
     sent=sendmsg(fd, &msg, 0); 
@@ -215,13 +217,136 @@ int get_extra_argument (int public, int private, char * public_path, char * priv
     return SUCCESS; 
 }
 
+
+/******************************************************** EXECUTION FUNCTIONS *********************************************/ 
+
+void execution_single_variant_with_extra(struct thread_group * ths, const struct syscall_header * variant , struct syscall_result * result,  size_t size, process_visibility vis){
+
+    ssize_t transfered =-1; 
+    char * buf = malloc(size);
+
+   int performer_thread_trusted;      
+   int performer_thread_untrusted; 
+   int performer_thread_cookie; 
+   int receiver_thread_cookie; 
+   int receiver_thread_untrusted; 
+    
+   if ( vis == PRIVATE) {
+       performer_thread_trusted   = ths->fds[PRIVATE_TRUSTED]; 
+       performer_thread_untrusted = ths->fds[PRIVATE_UNTRUSTED]; 
+       performer_thread_cookie    = ths->private.cookie;
+       receiver_thread_cookie     = ths->public.cookie; 
+       receiver_thread_untrusted  = ths->fds[PUBLIC_UNTRUSTED];
+   } else if ( vis == PUBLIC)  {
+     performer_thread_trusted     = ths->fds[PUBLIC_TRUSTED]; 
+     performer_thread_untrusted   = ths->fds[PUBLIC_UNTRUSTED]; 
+     performer_thread_cookie      = ths->public.cookie; 
+     receiver_thread_cookie       = ths->private.cookie; 
+     receiver_thread_untrusted    = ths->fds[PRIVATE_UNTRUSTED];
+  } else 
+    irreversible_error("Specified wrong visibility"); 
+              
+
+    CLEAN_RES(result);
+
+    // sends the request to the thread which will perform the system call 
+    if(forward_syscall_request(performer_thread_trusted, variant) < 0)
+            die("Failed send request to trusted thread");
+
+    //receive result with extra 
+    if ( (transfered=receive_result_with_extra(performer_thread_trusted, result, buf, size)) < 0) 
+        die("Error receiving result from the truste thread"); 
+   
+   result->cookie = receiver_thread_cookie;
+   if((transfered=send_result_with_extra(receiver_thread_untrusted, result, buf, size)) < 0)
+       die("Failed sending result (READ)"); 
+   CHECK(transfered, size + SIZE_RESULT, result->extra);  
+ 
+   result->cookie = performer_thread_cookie;
+   result->extra  = 0;
+   // send results to the untrusted thread private  
+   if(forward_syscall_result(performer_thread_untrusted, result) < 0)
+       die("Failed send request public trusted thread");
+
+    CHECK(transfered, size + SIZE_RESULT, result->extra); 
+    free(buf); 
+    return; 
+}
+
+void  execution_public_variant_with_extra(struct thread_group * ths, const struct syscall_header * public,  struct syscall_result * result, size_t size){
+  execution_single_variant_with_extra(ths, public, result, size, PUBLIC);  
+}
+
+void  execution_private_variant_with_extra(struct thread_group * ths, const struct syscall_header * private,  struct syscall_result * result, size_t size){
+  execution_single_variant_with_extra(ths, private, result,size,  PRIVATE);  
+}
+
+
+void execution_single_variant(struct thread_group * ths, const struct syscall_header * variant , struct syscall_result * result, process_visibility vis){
+
+   int performer_thread_trusted;      
+   int performer_thread_untrusted; 
+   int performer_thread_cookie; 
+   int receiver_thread_cookie; 
+   int receiver_thread_untrusted; 
+    
+   if ( vis == PRIVATE) {
+       performer_thread_trusted   = ths->fds[PRIVATE_TRUSTED]; 
+       performer_thread_untrusted = ths->fds[PRIVATE_UNTRUSTED]; 
+       performer_thread_cookie    = ths->private.cookie;
+       receiver_thread_cookie     = ths->public.cookie; 
+       receiver_thread_untrusted  = ths->fds[PUBLIC_UNTRUSTED];
+   } else if ( vis == PUBLIC) {
+     performer_thread_trusted     = ths->fds[PUBLIC_TRUSTED]; 
+     performer_thread_untrusted   = ths->fds[PUBLIC_UNTRUSTED]; 
+     performer_thread_cookie      = ths->public.cookie; 
+     receiver_thread_cookie       = ths->private.cookie; 
+     receiver_thread_untrusted    = ths->fds[PRIVATE_UNTRUSTED];
+  } else 
+    irreversible_error("Specify wrong visibility"); 
+              
+   CLEAN_RES(result);
+
+   if(forward_syscall_request(performer_thread_trusted, variant) < 0)
+            die("Failed send request to trusted thread");
+
+   if ( receive_syscall_result_async(performer_thread_trusted, result) < 0) 
+        die("Error receiving result from the truste thread"); 
+   
+   result->extra  = 0;
+   
+   result->cookie = receiver_thread_cookie;
+   if(forward_syscall_result(receiver_thread_untrusted, result) < 0)
+       die("Failed sending result (READ)"); 
+ 
+   result->cookie = performer_thread_cookie;
+   if(forward_syscall_result(performer_thread_untrusted, result) < 0)
+       die("Failed send request public trusted thread");
+
+    return; 
+}
+
+ void  execution_public_variant(struct thread_group * ths, const struct syscall_header * public,  struct syscall_result * result){
+  execution_single_variant(ths, public, result, PUBLIC);  
+}
+
+ void  execution_private_variant(struct thread_group * ths, const struct syscall_header * private,  struct syscall_result * result){
+  execution_single_variant(ths, private, result, PRIVATE);  
+}
+
+/****************************************************************************************************************************/ 
+
+
+
+
+
 /*************************** HANDLERS ******************************/ 
 void server_default ( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) { 
  
     struct syscall_result public_result, private_result; 
-    bool pub_res=false; 
-    bool priv_res=false; 
-    int res =-1; 
+/*    bool pub_res=false; */
+    /*bool priv_res=false; */
+    /*int res =-1; */
 
     DPRINT(DEBUG_INFO, "Server default handler for system call <%s>\n", syscall_names[public->syscall_num]);
    
@@ -270,8 +395,6 @@ void server_open ( struct thread_group* ths, const struct syscall_header * publi
 
    CLEAN_RES(&result); 
  
-   printf("%lu %lu\n", public->extra, private->extra); 
-
    assert( public->syscall_num == __NR_open && private->syscall_num == __NR_open); 
    assert( public->extra == private->extra); 
    
@@ -288,8 +411,17 @@ void server_open ( struct thread_group* ths, const struct syscall_header * publi
    else 
        SYSCALL_NO_VERIFIED("OPEN"); 
  
-  execution_private_variant(ths, public, private, &result);  
+  execution_private_variant(ths, private, &result);  
+
+  int index = get_free_fd(ths); 
+  if (index < 0)
+    irreversible_error("FD space full"); 
   
+  ths->fd_maps[index].fd         = (int)result.result; 
+  ths->fd_maps[index].type       = FILE_FD; 
+  ths->fd_maps[index].visibility = PRIVATE; 
+  DPRINT(DEBUG_INFO, "Added file descriptor %d to the private list\n", ths->fd_maps[index].fd);
+
   printf("[ PUBLIC  ] open(\"%s\"(%ld), 0x%lX) = %ld\n", public_path,  transfered, public->regs.arg1 , result.result); 
   printf("[ PRIVATE ] open(\"%s\"(%ld), 0x%lX) = %ld\n", private_path, transfered, private->regs.arg1, result.result); 
 
@@ -320,7 +452,7 @@ void server_fstat ( struct thread_group* ths, const struct syscall_header * publ
     CLEAN_RES(&result); 
     RESET(&res_fstat,sizeof(res_fstat));
 
-    execution_private_variant_extra(ths, public, private, &result, sizeof( struct stat));  
+    execution_private_variant_with_extra(ths, private, &result, sizeof( struct stat));  
     
     printf("[ PUBLIC  ] fstat(%ld, 0x%lX) = %ld\n", public->regs.arg0,   public->regs.arg1, result.result); 
     printf("[ PRIVATE ] fstat(%ld, 0x%lX) = %ld\n", private->regs.arg0, private->regs.arg1, result.result); 
@@ -413,7 +545,7 @@ void server_mmap ( struct thread_group* ths, const struct syscall_header * publi
       die("Receive extra FILE"); 
   
   printf(" Transfered %d, File %lu\n", transfered, file_size); 
-  assert( transfered == private_result.extra ); 
+  assert((unsigned long)transfered == private_result.extra ); 
   DPRINT(DEBUG_INFO, "File received correctly size %d\n", transfered);
   
   // unfortunately I cannot send the file along with the result because
@@ -450,25 +582,32 @@ void server_close ( struct thread_group* ths, const struct syscall_header * publ
    struct syscall_result result; 
 
    CLEAN_RES(&result); 
-   // sanity checks 
+  
    assert( public->syscall_num == __NR_close && private->syscall_num == __NR_close);
  
    if ( public->regs.arg0 == private->regs.arg0) 
         SYSCALL_VERIFIED("CLOSE"); 
    else 
-       SYSCALL_NO_VERIFIED("CLOSE"); 
+        SYSCALL_NO_VERIFIED("CLOSE"); 
  
    if ( IS_STD_FD(public->regs.arg0)) {
-         DPRINT(DEBUG_INFO, "CLOSE invoked with default file descriptor\n"); 
-         server_default(ths, public, private);
-         return;
+       DPRINT(DEBUG_INFO, "CLOSE invoked with default file descriptor\n"); 
+       server_default(ths, public, private);
+       return;
    } 
 
-  execution_private_variant(ths, public, private, &result);  
+  if (get_fd_visibility(ths, public->regs.arg0) == PUBLIC)
+    execution_public_variant(ths, public,  &result);  
+  else 
+    execution_private_variant(ths, private, &result); 
+
+  if (free_fd(ths, public->regs.arg0) < 0)
+    DPRINT(DEBUG_INFO, "Failed removing %d fd\n", (int)public->regs.arg0); 
+
+    DPRINT(DEBUG_INFO, "%d fd has been removed \n", (int)public->regs.arg0); 
 
   printf("[ PUBLIC  ] close(%ld) = %ld\n", public->regs.arg0, result.result); 
   printf("[ PRIVATE ] close(%ld) = %ld\n", private->regs.arg0,result.result); 
-  
   return; 
 }
 
@@ -498,10 +637,22 @@ void server_openat ( struct thread_group* ths, const struct syscall_header * pub
    else 
        SYSCALL_NO_VERIFIED("OPENAT");
 
-  execution_private_variant(ths, public, private, &result);  
+  execution_private_variant(ths, private, &result);  
 
-  printf("[ PUBLIC  ] openat(%lx, \"%s\"(%u), %lx) = %ld\n", public->regs.arg0, public_path, (unsigned)transfered,  public->regs.arg2, result.result); 
-  printf("[ PRIVATE ] openat(%lx, \"%s\"(%u), %lx) = %ld\n", private->regs.arg0, private_path, (unsigned)transfered, private->regs.arg2, result.result); 
+  int index = get_free_fd(ths); 
+  if (index < 0)
+    irreversible_error("FD space full"); 
+ 
+  ths->fd_maps[index].fd         = (int)result.result; 
+  ths->fd_maps[index].type       = FILE_FD; 
+  ths->fd_maps[index].visibility = PRIVATE; 
+
+  DPRINT(DEBUG_INFO, "Added file descriptor %d to the private list\n",  ths->fd_maps[index].fd);
+
+  printf("[ PUBLIC  ] openat(%lx, \"%s\"(%u), %lx) = %ld\n", public->regs.arg0, public_path,
+      (unsigned)transfered,  public->regs.arg2, result.result); 
+  printf("[ PRIVATE ] openat(%lx, \"%s\"(%u), %lx) = %ld\n", private->regs.arg0, private_path, 
+      (unsigned)transfered, private->regs.arg2, result.result); 
 
   free(public_path);
   free(private_path); 
@@ -556,7 +707,7 @@ void server_read ( struct thread_group* ths, const struct syscall_header * publi
     struct syscall_result result; 
     size_t size=0; 
 
-    DPRINT(DEBUG_INFO, "Start fstat handler\n"); 
+    DPRINT(DEBUG_INFO, "Start read handler\n"); 
 
     // sanity checks 
     assert( public->syscall_num == __NR_read  && private->syscall_num == __NR_read); 
@@ -576,8 +727,18 @@ void server_read ( struct thread_group* ths, const struct syscall_header * publi
         
     CLEAN_RES(&result);
     size = public->regs.arg2; 
-  
-    execution_private_variant_extra(ths, public, private, &result, size);  
+ 
+    if (is_fd_private(ths, public->regs.arg0)){
+      assert(!is_fd_public(ths, public->regs.arg0));
+      DPRINT(DEBUG_INFO, "Call executed in the private variant\n");
+      execution_private_variant_with_extra(ths, private, &result, size);  
+   } else {
+      DPRINT(DEBUG_INFO, "Call executed in the public variant\n");
+      assert(is_fd_public(ths, public->regs.arg0) && !is_fd_private(ths, public->regs.arg0));
+      execution_public_variant_with_extra(ths, public, &result,size); 
+   }
+
+ 
 
     printf("[ PUBLIC  ] read(%ld, 0x%lx, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1,  public->regs.arg2,  result.result); 
     printf("[ PRIVATE ] read(%ld, 0x%lx, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
@@ -602,7 +763,7 @@ void server_getdents ( struct thread_group * ths, const struct syscall_header * 
 
     CLEAN_RES(&result); 
    
-    execution_private_variant_extra(ths, public, private, &result, public->regs.arg2);  
+    execution_private_variant_with_extra(ths, private, &result, public->regs.arg2);  
 
     printf("[ PUBLIC  ] getdents(%ld, 0x%lx, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1,  public->regs.arg2,  result.result); 
     printf("[ PRIVATE ] getdents(%ld, 0x%lx, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
@@ -634,16 +795,26 @@ void server_write ( struct thread_group * ths, const struct syscall_header * pub
     if ( public->regs.arg0 == private->regs.arg0 &&  buffer_match &&
          public->regs.arg2 == private->regs.arg2 ) 
         SYSCALL_VERIFIED("WRITE"); 
-    else 
+    else {
         SYSCALL_NO_VERIFIED("WRITE"); 
-
+        puts("Public buffer : ");
+        puts(public_buf);
+        puts("Private buffer : ");
+        puts(private_buf);
+    }
    if(IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
          DPRINT(DEBUG_INFO, "WRITE called with default file descriptor\n"); 
          server_default(ths, public, private);
          return;
    } 
 
-    execution_private_variant_extra(ths, public, private, &result, public->regs.arg2);  
+   if (is_fd_private(ths, public->regs.arg0)){
+      assert(!is_fd_public(ths,public->regs.arg0)); 
+      execution_private_variant(ths, private, &result);  
+   } else {
+      assert(is_fd_public(ths, public->regs.arg0) && !is_fd_private(ths, public->regs.arg0));
+      execution_public_variant(ths, public, &result); 
+   }
 
     printf("[ PUBLIC  ] write(%ld, %lx, %ld) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); 
     printf("[ PRIVATE ] write(%ld, %lx, %ld) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
@@ -661,12 +832,12 @@ bool verify_ioctl( struct thread_group * ths, const struct syscall_header * publ
     if ( public->syscall_num != private->syscall_num)
          return false; 
     // verify FIRST ARGUMENT FD 
-    if ( public->regs.arg0 == private->regs.arg0 && 
-         IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0))
-            fd=true;    
-    else if ((get_private_fd(ths, public->regs.arg0) == (int)private->regs.arg0) && 
-             (get_public_fd(ths, private->regs.arg0) == (int)public->regs.arg0))
-           fd= true; 
+    /*if ( public->regs.arg0 == private->regs.arg0 && */
+         /*IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0))*/
+            /*fd=true;    */
+    /*else if ((get_private_fd(ths, public->regs.arg0) == (int)private->regs.arg0) && */
+             /*(get_public_fd(ths, private->regs.arg0) == (int)public->regs.arg0))*/
+           /*fd= true; */
   
     if ( public->regs.arg1 == private->regs.arg1)
          command = true;
@@ -765,11 +936,11 @@ void server_getpid( struct thread_group * ths, const struct syscall_header * pub
         SYSCALL_NO_VERIFIED("GETPID"); 
 
 
-    private_result.result = ths->private.trusted.pid; 
+    private_result.result = ths->private.untrusted.pid; 
     private_result.cookie = private->cookie; 
     private_result.extra = 0; 
    
-    public_result.result = ths->public.trusted.pid; 
+    public_result.result = ths->private.untrusted.pid; 
     public_result.cookie = public->cookie; 
     public_result.extra = 0; 
   
@@ -785,60 +956,33 @@ void server_getpid( struct thread_group * ths, const struct syscall_header * pub
     return; 
 }
 
-void execution_private_variant(struct thread_group * ths, const struct syscall_header * public, const struct syscall_header * private, 
-                                     struct syscall_result * result){
+/*void execution_private_variant(struct thread_group * ths, const struct syscall_header * public, const struct syscall_header * private, */
+                                     /*struct syscall_result * result){*/
 
-    CLEAN_RES(result);
+    /*CLEAN_RES(result);*/
 
-    // sends the request to the private application 
-    if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
-            die("failed send request public trusted thread");
+    /*// sends the request to the private application */
+    /*if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)*/
+            /*die("failed send request public trusted thread");*/
 
-    //receive result with extra 
-    if ( (receive_syscall_result_async(ths->fds[PRIVATE_TRUSTED], result)) < 0) 
-        die("Error receiving result(READ)"); 
-   
-   // send results to the untrusted thread private  
-    if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], result) < 0)
-        die("Failed send request public trusted thread");
+    /*//receive result with extra */
+    /*if ( (receive_syscall_result_async(ths->fds[PRIVATE_TRUSTED], result)) < 0) */
+        /*die("Error receiving result(READ)"); */
 
-    result->cookie = public->cookie;
-    // send results to the untrusted thread private  
-    if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], result) < 0)
-        die("Failed send request public trusted thread");
+    /*result->extra = 0; */
+   /*// send results to the untrusted thread private  */
+    /*if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], result) < 0)*/
+        /*die("Failed send request public trusted thread");*/
+
+    /*result->cookie = public->cookie;*/
+    /*// send results to the untrusted thread private  */
+    /*if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], result) < 0)*/
+        /*die("Failed send request public trusted thread");*/
   
-    return; 
-}
+    /*return; */
+/*}*/
 
-void execution_private_variant_extra(struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private, 
-    struct syscall_result * result,  size_t size){
 
-    ssize_t transfered =-1; 
-    char * buf = malloc(size);
-    
-    CLEAN_RES(result);
-
-    // sends the request to the private application 
-    if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
-            die("failed send request public trusted thread");
-
-    //receive result with extra 
-    if ( (transfered=receive_result_with_extra(ths->fds[PRIVATE_TRUSTED], result, buf, size)) < 0) 
-        die("Error receiving result(READ)"); 
-   
-   CHECK(transfered, size + SIZE_RESULT, result->result); 
-   // send results to the untrusted thread private  
-    if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], result) < 0)
-        die("Failed send request public trusted thread");
-
-    result->cookie = public->cookie;
-    if((transfered=send_result_with_extra(ths->fds[PUBLIC_UNTRUSTED], result, buf, size)) < 0)
-        die("Failed sending result (READ)"); 
-   
-    CHECK(transfered, size + SIZE_RESULT, result->result); 
-    free(buf); 
-    return; 
-}
 
 void server_getcwd( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
 
@@ -849,7 +993,7 @@ void server_getcwd( struct thread_group * ths, const struct syscall_header * pub
     else 
         SYSCALL_NO_VERIFIED("GETCWD"); 
 
-    execution_private_variant_extra(ths, public, private, &result, public->regs.arg1);  
+    execution_private_variant_with_extra(ths, private, &result, public->regs.arg1);  
 
     printf("[ PUBLIC  ] getcwd(%lx, %ld) = %ld\n", public->regs.arg0,  public->regs.arg1,  result.result); 
     printf("[ PRIVATE ] getcwd(%lx, %ld) = %ld\n", private->regs.arg0, private->regs.arg1, result.result); 
@@ -866,8 +1010,8 @@ void server_getuid( struct thread_group * ths, const struct syscall_header * pub
     else 
         SYSCALL_NO_VERIFIED("GETUID"); 
 
-    execution_private_variant(ths, public, private, &result);  
-
+    execution_private_variant(ths, private, &result);  
+    
     printf("[ PUBLIC  ] getuid() = %ld\n", result.result); 
     printf("[ PRIVATE ] getuid() = %ld\n", result.result); 
 
@@ -899,7 +1043,7 @@ void server_stat( struct thread_group * ths, const struct syscall_header * publi
     else 
         SYSCALL_NO_VERIFIED("STAT"); 
 
-    execution_private_variant_extra(ths, public, private, &result, sizeof( struct stat));  
+    execution_private_variant_with_extra(ths, private, &result, sizeof( struct stat));  
 
     printf("[ PUBLIC  ] stat(%s, 0x%lx) = %ld\n", public_buf,  public->regs.arg0,  result.result); 
     printf("[ PRIVATE ] stat(%s, 0x%lx) = %ld\n", private_buf, private->regs.arg0, result.result); 
@@ -923,7 +1067,8 @@ void server_lseek( struct thread_group * ths, const struct syscall_header * publ
     else 
         SYSCALL_NO_VERIFIED("LSEEK"); 
 
-    execution_private_variant(ths, public, private, &result);  
+    assert(is_fd_private(ths, public->regs.arg0)); 
+    execution_private_variant(ths, private, &result);  
 
     printf("[ public  ] lseek(%ld, %lx, %lx) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); 
     printf("[ private ] lseek(%ld, %lx, %lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
@@ -931,6 +1076,163 @@ void server_lseek( struct thread_group * ths, const struct syscall_header * publ
     return; 
 }
 
+// Easy version of the fcntl 
+void server_fcntl( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+
+    assert(public->syscall_num  == __NR_fcntl && 
+           private->syscall_num == __NR_fcntl); 
+
+    if ( (public->regs.arg0 == private->regs.arg0) && 
+         (public->regs.arg1 == private->regs.arg1) &&
+         (public->regs.arg2 == private->regs.arg2) )
+        SYSCALL_VERIFIED("FCNTL"); 
+    else 
+        SYSCALL_NO_VERIFIED("FCNTL"); 
+
+    execution_private_variant(ths,private, &result);  
+
+    printf("[ public  ] fcntl(%ld, %lx, %lx) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); 
+    printf("[ private ] fcntl(%ld, %lx, %lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
+
+    return; 
+}
+
+void server_socket( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+
+    assert(public->syscall_num  == __NR_socket && 
+           private->syscall_num == __NR_socket); 
+
+    if ( (public->regs.arg0 == private->regs.arg0) && 
+         (public->regs.arg1 == private->regs.arg1) &&
+         (public->regs.arg2 == private->regs.arg2) )
+        SYSCALL_VERIFIED("SOCKET"); 
+    else 
+        SYSCALL_NO_VERIFIED("SOCKET"); 
+
+    execution_public_variant(ths, public,  &result);  
+
+    int index = get_free_fd(ths);
+    if ( index < 0 )
+      irreversible_error("FD space full"); 
+    ths->fd_maps[index].fd         = (int)result.result; 
+    ths->fd_maps[index].type       = SOCKET_FD; 
+    ths->fd_maps[index].visibility = PUBLIC; 
+
+    DPRINT(DEBUG_INFO, "Added file descriptor %d to the public list\n", ths->fd_maps[index].fd );
+
+    printf("[ public  ] socket(%ld, %lx, %lx) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); 
+    printf("[ private ] socket(%ld, %lx, %lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
+
+    return; 
+}
+
+void server_setsockopt( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+    char * private_buffer= NULL, *public_buffer = NULL; 
+    size_t size_buf = 0; 
+    ssize_t transfered= -1; 
+    bool buffer_match =false; 
+
+    assert(public->syscall_num  == __NR_setsockopt && 
+           private->syscall_num == __NR_setsockopt ); 
+    assert(public->regs.arg4 ==  private->regs.arg4);  
+
+    size_buf = public->regs.arg4; 
+    private_buffer = calloc(size_buf, 1); 
+    public_buffer = calloc(size_buf, 1); 
+
+    transfered = get_extra_arguments(ths->fds[PUBLIC_UNTRUSTED],public_buffer,
+                  ths->fds[PRIVATE_UNTRUSTED], private_buffer , size_buf);
+  
+    if ( transfered < 0 )
+      die("Error extra argument SETSOCKOPR");
+
+    assert( (size_t)transfered == size_buf); 
+    buffer_match = !memcmp(public_buffer, private_buffer, size_buf);
+
+    if ( (public->regs.arg0 == private->regs.arg0) && buffer_match && 
+         (public->regs.arg1 == private->regs.arg1) &&
+         (public->regs.arg2 == private->regs.arg2) && 
+         (public->regs.arg4 == private->regs.arg4) )
+        SYSCALL_VERIFIED("SETSOCKOPT"); 
+    else 
+        SYSCALL_NO_VERIFIED("SETSOCKOPT"); 
+
+    assert(is_fd_public(ths, (int)public->regs.arg0));
+    execution_public_variant(ths, public,  &result);  
+
+    printf("[ public  ] setsockopt(%ld, 0x%lx, 0x%lx, 0x%lx, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2,
+                                                                              public->regs.arg3,  public->regs.arg4, result.result); 
+    printf("[ private ] setsockopt(%ld, 0x%lx, 0x%lx, 0x%lx, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2,  
+                                                                              private->regs.arg3, private->regs.arg4, result.result); 
+    return; 
+}
+
+void server_bind( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+    char * private_buffer= NULL, *public_buffer = NULL; 
+    size_t size_buf = 0; 
+    ssize_t transfered= -1; 
+    bool buffer_match =false; 
+
+    assert(public->syscall_num  == __NR_bind && 
+           private->syscall_num == __NR_bind ); 
+    assert(public->regs.arg2 ==  private->regs.arg2); 
+
+    size_buf = public->regs.arg2; 
+    private_buffer = calloc(size_buf, 1); 
+    public_buffer = calloc(size_buf, 1); 
+
+    transfered = get_extra_arguments(ths->fds[PUBLIC_UNTRUSTED],public_buffer,
+                  ths->fds[PRIVATE_UNTRUSTED], private_buffer , size_buf);
+ 
+    if ( transfered < 0)
+      die("Error extra argument BIND"); 
+    assert((size_t)transfered == size_buf); 
+    buffer_match = !memcmp(public_buffer, private_buffer, size_buf);
+
+    if ( (public->regs.arg0 == private->regs.arg0) && buffer_match && 
+         (public->regs.arg2 == private->regs.arg2) )
+      SYSCALL_VERIFIED("BIND"); 
+    else 
+      SYSCALL_NO_VERIFIED("BIND"); 
+
+    assert(is_fd_public(ths, public->regs.arg0)); 
+    execution_public_variant(ths, public,  &result);  
+
+    printf("[ public  ] bind(%ld, 0x%lx, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); 
+    printf("[ private ] bind(%ld, 0x%lx, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
+
+    return; 
+}
+
+void server_listen( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+
+    assert(public->syscall_num  == __NR_listen && 
+           private->syscall_num == __NR_listen ); 
+
+    if ( (public->regs.arg0 == private->regs.arg0) && 
+         (public->regs.arg1 == private->regs.arg1) )
+        SYSCALL_VERIFIED("LISTEN"); 
+    else 
+        SYSCALL_NO_VERIFIED("LISTEN"); 
+
+    assert(is_fd_public(ths, public->regs.arg0)); 
+    execution_public_variant(ths, public,  &result);  
+
+    printf("[ public  ] listen(%ld, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1, result.result); 
+    printf("[ private ] listen(%ld, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, result.result); 
+
+    return; 
+}
 /********************************************************************/
 
 /************** INSTALL SERVER HANDLER *****************************/ 
@@ -953,9 +1255,14 @@ void initialize_server_handler() {
       { __NR_read,           server_read       }, 
       { __NR_lseek,          server_lseek      }, 
       /*{ __NR_ioctl,          server_ioctl      }, */
+      { __NR_fcntl ,         server_fcntl      }, 
       { __NR_getpid,         server_getpid     }, 
       { __NR_getcwd,         server_getcwd     }, 
       { __NR_getuid,         server_getuid     }, 
+      { __NR_socket,         server_socket     }, 
+      { __NR_bind,           server_bind       }, 
+      { __NR_listen,         server_listen     }, 
+      { __NR_setsockopt,     server_setsockopt }, 
    }; 
 
    syscall_table_server_ = (struct server_handler *)malloc( MAX_SYSTEM_CALL * (sizeof( struct server_handler))); 

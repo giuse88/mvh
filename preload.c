@@ -2,6 +2,10 @@
 #include <dlfcn.h> 
 #include <link.h>
 
+#include <sys/syscall.h> 
+#include <sys/types.h> 
+#include <unistd.h> 
+
 #include "debug.h" 
 #include "error.h"
 #include "sandbox.h"
@@ -59,3 +63,7 @@ int __libc_start_main(main_t main,
   return (*libc_start_main)(wrap_main, argc, ubp_av, auxvec, init, fini, rtld_fini, stack_end);
 }
 
+
+pid_t getpid(void) {
+  return  syscall(__NR_getpid); 
+}
