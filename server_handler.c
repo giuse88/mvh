@@ -599,7 +599,15 @@ void server_close ( struct thread_group* ths, const struct syscall_header * publ
  
    if ( IS_STD_FD(public->regs.arg0)) {
        DPRINT(DEBUG_INFO, "CLOSE invoked with default file descriptor\n"); 
-       server_default(ths, public, private);
+      
+       result.cookie = public->cookie; 
+       forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], &result); 
+       
+       result.cookie = private->cookie; 
+       forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], &result); 
+       
+       printf("[ PUBLIC  ] close(%ld) = %ld (SKIPPED)\n", public->regs.arg0, result.result); 
+       printf("[ PRIVATE ] close(%ld) = %ld (SKIPPED)\n", private->regs.arg0,result.result); 
        return;
    } 
 
@@ -736,7 +744,6 @@ void server_read ( struct thread_group* ths, const struct syscall_header * publi
     size = public->regs.arg2; 
  
     if (is_fd_private(ths, public->regs.arg0)){
-      assert(!is_fd_public(ths, public->regs.arg0));
       DPRINT(DEBUG_INFO, "Call executed in the private variant\n");
       execution_private_variant_with_extra(ths, private, &result, size);  
    } else {
@@ -816,7 +823,6 @@ void server_write ( struct thread_group * ths, const struct syscall_header * pub
    } 
 
    if (is_fd_private(ths, public->regs.arg0)){
-      assert(!is_fd_public(ths,public->regs.arg0)); 
       execution_private_variant(ths, private, &result);  
    } else {
       assert(is_fd_public(ths, public->regs.arg0) && !is_fd_private(ths, public->regs.arg0));
