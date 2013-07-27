@@ -62,9 +62,9 @@ process_visibility get_fd_visibility(const struct thread_group * ths, int fd) {
   return -1; 
 }
 
-fd_type get_fd_type(const struct thread_group * ths, int fd) {
+fd_type get_fd_type(const struct thread_group * ths, int fd, process_visibility vis) {
   for (int i=0; i < MAX_FD; i++) 
-        if ( ths->fd_maps[i].fd == fd) 
+        if ( ths->fd_maps[i].fd == fd && ths->fd_maps[i].visibility == vis) 
             return ths->fd_maps[i].type; 
   return -1; 
 }
@@ -1307,7 +1307,7 @@ void server_epoll_ctl( struct thread_group * ths, const struct syscall_header * 
     else 
         SYSCALL_NO_VERIFIED("EPOLL_CREATE"); 
 
-    assert(is_fd_public(ths, public->regs.arg0)); 
+    assert(is_fd_public(ths, public->regs.arg0) && get_fd_type(ths, public->regs.arg0, PUBLIC) == POLL_FD); 
     // this is not cmpletely true, a better solution should be to execute in both variant
     execution_public_variant(ths, public, &result);  
 
@@ -1318,7 +1318,6 @@ void server_epoll_ctl( struct thread_group * ths, const struct syscall_header * 
 
     return; 
 }
-
 
 void server_epoll_wait( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
 
@@ -1340,7 +1339,7 @@ void server_epoll_wait( struct thread_group * ths, const struct syscall_header *
     else 
         SYSCALL_NO_VERIFIED("EPOLL_WAIT"); 
 
-    assert(is_fd_public(ths, public->regs.arg0) && get_fd_type(ths, public->regs.arg0)); 
+    assert(is_fd_public(ths, public->regs.arg0) && get_fd_type(ths, public->regs.arg0, PUBLIC) == POLL_FD); 
     // this is not cmpletely true, a better solution should be to execute in both variant
     execution_public_variant(ths, public, &result);  
 
