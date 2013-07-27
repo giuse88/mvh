@@ -1256,7 +1256,6 @@ void server_listen( struct thread_group * ths, const struct syscall_header * pub
 }
 /********************************************************************/
 
-
 void server_epoll_create( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
 
     struct syscall_result result; 
@@ -1303,19 +1302,17 @@ void server_epoll_ctl( struct thread_group * ths, const struct syscall_header * 
     if ( (public->regs.arg0 == private->regs.arg0 ) &&  buffer_match &&
          (public->regs.arg1 == private->regs.arg1 ) &&  
          (public->regs.arg2 == private->regs.arg2 ) )
-        SYSCALL_VERIFIED("EPOLL_CREATE"); 
+        SYSCALL_VERIFIED("EPOLL_CTL"); 
     else 
-        SYSCALL_NO_VERIFIED("EPOLL_CREATE"); 
+        SYSCALL_NO_VERIFIED("EPOLL_CTL"); 
 
     assert(is_fd_public(ths, public->regs.arg0) && get_fd_type(ths, public->regs.arg0, PUBLIC) == POLL_FD); 
-    // this is not cmpletely true, a better solution should be to execute in both variant
     execution_public_variant(ths, public, &result);  
-
+    
     printf("[ public  ] epoll_ctl(%ld, 0x%lx, %ld, 0x%lx) = %ld\n", public->regs.arg0, public->regs.arg1,
                                                     public->regs.arg2,  public->regs.arg3, result.result); 
     printf("[ private ] epoll_ctl(%ld, 0x%lx, %ld, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1 ,
                                                     private->regs.arg2, private->regs.arg3, result.result); 
-
     return; 
 }
 
@@ -1340,16 +1337,15 @@ void server_epoll_wait( struct thread_group * ths, const struct syscall_header *
         SYSCALL_NO_VERIFIED("EPOLL_WAIT"); 
 
     assert(is_fd_public(ths, public->regs.arg0) && get_fd_type(ths, public->regs.arg0, PUBLIC) == POLL_FD); 
-    // this is not cmpletely true, a better solution should be to execute in both variant
-    execution_public_variant(ths, public, &result);  
 
+    execution_public_variant_with_extra(ths, public, &result, sizeof(struct epoll_event));  
+    
     printf("[ public  ] epoll_wait(%ld, 0x%lx, %ld, %ld) = %ld\n", public->regs.arg0, public->regs.arg1,
                                                     public->regs.arg2,  public->regs.arg3, result.result); 
     printf("[ private ] epoll_wait(%ld, 0x%lx, %ld, %ld) = %ld\n", private->regs.arg0, private->regs.arg1 ,
                                                     private->regs.arg2, private->regs.arg3, result.result); 
     return; 
 }
-
 
 /************** INSTALL SERVER HANDLER *****************************/ 
 void initialize_server_handler() { 

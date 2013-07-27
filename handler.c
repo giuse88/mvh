@@ -948,14 +948,17 @@ u64_t untrusted_epoll_ctl(const ucontext_t * uc ){
 
 u64_t untrusted_epoll_wait(const ucontext_t * uc ){
 
-   struct syscall_result result; 
+   struct syscall_result res; 
    char * buf = NULL;  
    size_t size =0; 
    u64_t extra =0;  
- 
-   UNTRUSTED_START("EPOLL_WAIT");
+   int fd =  get_local_fd();
+   u64_t cookie = get_local_tid();
+   ssize_t  transfered = -1; 
 
-   CLEAN_RES(&result); 
+
+   UNTRUSTED_START("EPOLL_WAIT");
+   CLEAN_RES(&res); 
 
    buf = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
    size  = sizeof(struct epoll_event);
@@ -964,16 +967,49 @@ u64_t untrusted_epoll_wait(const ucontext_t * uc ){
    if (send_syscall_header(uc, extra)< 0)
       die("Send syscall header"); 
   
-   if (send_extra(get_local_fd(), buf, size) < 0) 
+   if (send_extra(fd, buf, size) < 0) 
        die("Failed send extra (Untrudted write)"); 
-  
-   if(receive_syscall_result(&result) < 0 )
-       die("Failede get_syscall_result"); 
+ 
+     transfered= receive_result_with_extra(fd, &res, buf, size); 
+   if ( transfered < 0) 
+      die("Recvmsg failed result stat"); 
 
+   assert(res.cookie == cookie);
+   CHECK(transfered, size + SIZE_RESULT, res.extra); 
+ 
    UNTRUSTED_END("EPOLL_WAIT"); 
-   return (u64_t)result.result; 
+   return (u64_t)res.result; 
 }
 
+void  trusted_epoll_wait ( int fd, const struct syscall_header * header) {
+
+  struct syscall_result result; 
+  struct syscall_request request;
+  ssize_t transfered = -1; 
+
+  CLEAN_RES(&result); 
+  CLEAN_REQ(&request); 
+
+  TRUSTED_START("EPOLL_WAIT"); 
+
+  assert(header->syscall_num == __NR_epoll_wait);
+  request.syscall_identifier = header->syscall_num;
+
+  memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
+  
+  result.result = do_syscall(&request);
+  result.cookie = header->cookie; 
+  result.extra = sizeof (struct epoll_event);
+
+  transfered = send_result_with_extra(fd, &result, (char *)header->regs.arg1, sizeof(struct epoll_event));  
+  if ( transfered < 0) 
+      die("Recvmsg (Fstat handler)"); 
+
+  CHECK(transfered, sizeof(struct epoll_event) + SIZE_RESULT, result.extra);
+  TRUSTED_END("EPOLL_WAIT"); 
+  
+  return; 
+}
 /*[> CLONE <] */
 /*u64_t clone_untrusted ( const ucontext_t * context) {*/
 

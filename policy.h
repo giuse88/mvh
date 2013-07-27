@@ -48,7 +48,7 @@ const struct policy public_policy[] = {
     { __NR_listen,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},  
     { __NR_setsockopt,      untrusted_setsockopt,      DEFAULT_TRUSTED}, 
     { __NR_epoll_ctl,       untrusted_epoll_ctl,       DEFAULT_TRUSTED}, 
-    { __NR_epoll_wait,      untrusted_epoll_wait,      DEFAULT_TRUSTED}, 
+    { __NR_epoll_wait,      untrusted_epoll_wait,      trusted_epoll_wait }, 
 };
 
 //PRIVATE APPLICATION
@@ -66,7 +66,7 @@ const struct policy private_policy[] = {
     { __NR_mmap,            DEFAULT_UNTRUSTED,         trusted_mmap  },
     { __NR_close,           DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
     { __NR_write,           untrusted_write,           DEFAULT_TRUSTED}, 
-    { __NR_read,            untrusted_read,         trusted_read   }, 
+    { __NR_read,            untrusted_read,             trusted_read   }, 
     { __NR_lseek,           DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
     //{ __NR_ioctl,           DEFAULT_UNTRUSTED,         trusted_ioctl  }, 
     //{ __NR_munmap,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
