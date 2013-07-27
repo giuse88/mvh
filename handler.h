@@ -87,5 +87,7 @@ extern void  trusted_stat   ( int fd, const struct syscall_header * header);
 
 extern u64_t untrusted_setsockopt(const ucontext_t * uc ); 
 extern u64_t untrusted_bind(const ucontext_t * uc ); 
+extern u64_t untrusted_epoll_ctl(const ucontext_t * uc ); 
+extern u64_t untrusted_epoll_wait(const ucontext_t * uc ); 
 
 #endif /* end of include guard: HANDLER_H */

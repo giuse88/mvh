@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <arpa/inet.h> 
 #include <sys/syscall.h>
+#include <sys/epoll.h>
 #include <assert.h> 
 
 
@@ -374,7 +375,7 @@ void  trusted_mmap   ( int fd, const struct syscall_header * header) {
   
   // sanity check 
   int j=0;
-  for (int i=0; i < real_map_size; i++)
+  for (int i=0; i < (int)real_map_size; i++)
     j=buf[i]; 
   j+=j; 
 
@@ -383,7 +384,7 @@ void  trusted_mmap   ( int fd, const struct syscall_header * header) {
   int transfered = send_result_with_extra(fd, &result, buf, real_map_size);  
   DPRINT(DEBUG_INFO, ">>> Transfered %d\n", transfered);
   
-  assert( transfered == real_map_size + SIZE_RESULT); 
+  CHECK(transfered, real_map_size + SIZE_RESULT, 0); 
 
   DPRINT(DEBUG_INFO, "mmap(%lX, %ld, 0x%lX, 0x%lx, %ld, %lu) = 0x%lX\n",
       header->regs.arg0, header->regs.arg1,
@@ -914,6 +915,62 @@ u64_t untrusted_bind(const ucontext_t * uc ){
        die("Failede get_syscall_result"); 
 
    UNTRUSTED_END("BIND"); 
+   return (u64_t)result.result; 
+}
+
+u64_t untrusted_epoll_ctl(const ucontext_t * uc ){
+
+   struct syscall_result result; 
+   char * buf = NULL;  
+   size_t size =0; 
+   u64_t extra =0;  
+ 
+   UNTRUSTED_START("EPOLL_CTL");
+
+   CLEAN_RES(&result); 
+
+   buf = (char *)uc->uc_mcontext.gregs[REG_ARG3]; 
+   size  = sizeof(struct epoll_event);
+   extra = size; 
+  
+   if (send_syscall_header(uc, extra)< 0)
+      die("Send syscall header"); 
+  
+   if (send_extra(get_local_fd(), buf, size) < 0) 
+       die("Failed send extra (Untrudted write)"); 
+  
+   if(receive_syscall_result(&result) < 0 )
+       die("Failede get_syscall_result"); 
+
+   UNTRUSTED_END("EPOLL_CTL"); 
+   return (u64_t)result.result; 
+}
+
+u64_t untrusted_epoll_wait(const ucontext_t * uc ){
+
+   struct syscall_result result; 
+   char * buf = NULL;  
+   size_t size =0; 
+   u64_t extra =0;  
+ 
+   UNTRUSTED_START("EPOLL_WAIT");
+
+   CLEAN_RES(&result); 
+
+   buf = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
+   size  = sizeof(struct epoll_event);
+   extra = size; 
+  
+   if (send_syscall_header(uc, extra)< 0)
+      die("Send syscall header"); 
+  
+   if (send_extra(get_local_fd(), buf, size) < 0) 
+       die("Failed send extra (Untrudted write)"); 
+  
+   if(receive_syscall_result(&result) < 0 )
+       die("Failede get_syscall_result"); 
+
+   UNTRUSTED_END("EPOLL_WAIT"); 
    return (u64_t)result.result; 
 }
 

@@ -23,7 +23,7 @@ struct thread_pair {
 };    
 #define SIZE_THREAD_PAIR sizeof(struct thread_pair)
 
-typedef enum{EMPTY_FD=0, FILE_FD, SOCKET_FD} fd_type; 
+typedef enum{EMPTY_FD=0, FILE_FD, SOCKET_FD, POLL_FD} fd_type; 
 struct fd_info{
     fd_type type;
     process_visibility visibility; 

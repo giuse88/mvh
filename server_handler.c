@@ -15,6 +15,7 @@
 #include <fcntl.h> 
 #include <termios.h> 
 #include <sys/ioctl.h>
+#include <sys/epoll.h>
 
 #define DEFAULT_SERVER_HANDLER server_default
 struct server_handler * syscall_table_server_; 
@@ -61,6 +62,12 @@ process_visibility get_fd_visibility(const struct thread_group * ths, int fd) {
   return -1; 
 }
 
+fd_type get_fd_type(const struct thread_group * ths, int fd) {
+  for (int i=0; i < MAX_FD; i++) 
+        if ( ths->fd_maps[i].fd == fd) 
+            return ths->fd_maps[i].type; 
+  return -1; 
+}
 
 /* Useful functions */ 
 void  syscall_info(const struct  syscall_header * head, const struct syscall_registers *reg, const struct  syscall_result *res, process_visibility vis) {
@@ -1080,6 +1087,7 @@ void server_lseek( struct thread_group * ths, const struct syscall_header * publ
 void server_fcntl( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
 
     struct syscall_result result; 
+    int fd; 
 
     assert(public->syscall_num  == __NR_fcntl && 
            private->syscall_num == __NR_fcntl); 
@@ -1091,7 +1099,14 @@ void server_fcntl( struct thread_group * ths, const struct syscall_header * publ
     else 
         SYSCALL_NO_VERIFIED("FCNTL"); 
 
-    execution_private_variant(ths,private, &result);  
+    fd = private->regs.arg0; 
+
+    if (is_fd_public(ths, fd)){
+      execution_public_variant(ths, public, &result); 
+    } else {
+      assert(is_fd_private(ths, fd)); 
+      execution_private_variant(ths,private, &result);  
+    }
 
     printf("[ public  ] fcntl(%ld, %lx, %lx) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); 
     printf("[ private ] fcntl(%ld, %lx, %lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
@@ -1235,6 +1250,102 @@ void server_listen( struct thread_group * ths, const struct syscall_header * pub
 }
 /********************************************************************/
 
+
+void server_epoll_create( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+
+    assert(public->syscall_num == private->syscall_num); 
+
+    if (public->regs.arg0 == private->regs.arg0) 
+        SYSCALL_VERIFIED("EPOLL_CREATE"); 
+    else 
+        SYSCALL_NO_VERIFIED("EPOLL_CREATE"); 
+
+    // this is not cmpletely true, a better solution should be to execute in both variant
+    execution_public_variant(ths, public, &result);  
+
+    int index = get_free_fd(ths); 
+    if (index < 0)
+      irreversible_error("FD space full"); 
+    
+    ths->fd_maps[index].fd         = (int)result.result; 
+    ths->fd_maps[index].type       = POLL_FD; 
+    ths->fd_maps[index].visibility = PUBLIC; 
+
+    DPRINT(DEBUG_INFO, "Insert fd %d at the indext %d\n", ths->fd_maps[index].fd,index); 
+    
+    printf("[ public  ] epoll_create(0x%lx) = %ld\n", public->regs.arg0, result.result); 
+    printf("[ private ] epoll_create(0x%lx) = %ld\n", private->regs.arg0, result.result); 
+
+    return; 
+}
+
+void server_epoll_ctl( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+    struct epoll_event private_str, public_str; 
+    bool buffer_match; 
+
+    assert(public->syscall_num == private->syscall_num); 
+
+    get_extra_arguments(ths->fds[PUBLIC_UNTRUSTED], (char *)&public_str, ths->fds[PRIVATE_UNTRUSTED],
+                        (char *)&private_str, sizeof(struct epoll_event)); 
+    
+    buffer_match = memcmp((char *)&public_str, (char *)&private_str, sizeof(struct epoll_event))? false : true; 
+
+    if ( (public->regs.arg0 == private->regs.arg0 ) &&  buffer_match &&
+         (public->regs.arg1 == private->regs.arg1 ) &&  
+         (public->regs.arg2 == private->regs.arg2 ) )
+        SYSCALL_VERIFIED("EPOLL_CREATE"); 
+    else 
+        SYSCALL_NO_VERIFIED("EPOLL_CREATE"); 
+
+    assert(is_fd_public(ths, public->regs.arg0)); 
+    // this is not cmpletely true, a better solution should be to execute in both variant
+    execution_public_variant(ths, public, &result);  
+
+    printf("[ public  ] epoll_ctl(%ld, 0x%lx, %ld, 0x%lx) = %ld\n", public->regs.arg0, public->regs.arg1,
+                                                    public->regs.arg2,  public->regs.arg3, result.result); 
+    printf("[ private ] epoll_ctl(%ld, 0x%lx, %ld, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1 ,
+                                                    private->regs.arg2, private->regs.arg3, result.result); 
+
+    return; 
+}
+
+
+void server_epoll_wait( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+    struct epoll_event private_str, public_str; 
+    bool buffer_match; 
+
+    assert(public->syscall_num == private->syscall_num); 
+
+    get_extra_arguments(ths->fds[PUBLIC_UNTRUSTED], (char *)&public_str, ths->fds[PRIVATE_UNTRUSTED],
+                        (char *)&private_str, sizeof(struct epoll_event)); 
+    
+    buffer_match = memcmp((char *)&public_str, (char *)&private_str, sizeof(struct epoll_event))? false : true; 
+
+    if ( (public->regs.arg0 == private->regs.arg0 ) && buffer_match &&  
+         (public->regs.arg2 == private->regs.arg2 ) &&  
+         (public->regs.arg3 == private->regs.arg3 ) )
+        SYSCALL_VERIFIED("EPOLL_WAIT"); 
+    else 
+        SYSCALL_NO_VERIFIED("EPOLL_WAIT"); 
+
+    assert(is_fd_public(ths, public->regs.arg0) && get_fd_type(ths, public->regs.arg0)); 
+    // this is not cmpletely true, a better solution should be to execute in both variant
+    execution_public_variant(ths, public, &result);  
+
+    printf("[ public  ] epoll_wait(%ld, 0x%lx, %ld, %ld) = %ld\n", public->regs.arg0, public->regs.arg1,
+                                                    public->regs.arg2,  public->regs.arg3, result.result); 
+    printf("[ private ] epoll_wait(%ld, 0x%lx, %ld, %ld) = %ld\n", private->regs.arg0, private->regs.arg1 ,
+                                                    private->regs.arg2, private->regs.arg3, result.result); 
+    return; 
+}
+
+
 /************** INSTALL SERVER HANDLER *****************************/ 
 void initialize_server_handler() { 
 
@@ -1263,6 +1374,9 @@ void initialize_server_handler() {
       { __NR_bind,           server_bind       }, 
       { __NR_listen,         server_listen     }, 
       { __NR_setsockopt,     server_setsockopt }, 
+      { __NR_epoll_create,   server_epoll_create}, 
+      { __NR_epoll_ctl,      server_epoll_ctl   }, 
+      { __NR_epoll_wait,     server_epoll_wait  }, 
    }; 
 
    syscall_table_server_ = (struct server_handler *)malloc( MAX_SYSTEM_CALL * (sizeof( struct server_handler))); 

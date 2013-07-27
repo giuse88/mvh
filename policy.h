@@ -47,6 +47,8 @@ const struct policy public_policy[] = {
     { __NR_bind,            untrusted_bind,            DEFAULT_TRUSTED},  
     { __NR_listen,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},  
     { __NR_setsockopt,      untrusted_setsockopt,      DEFAULT_TRUSTED}, 
+    { __NR_epoll_ctl,       untrusted_epoll_ctl,       DEFAULT_TRUSTED}, 
+    { __NR_epoll_wait,      untrusted_epoll_wait,      DEFAULT_TRUSTED}, 
 };
 
 //PRIVATE APPLICATION
@@ -76,6 +78,8 @@ const struct policy private_policy[] = {
     { __NR_bind,            untrusted_bind,            NO_HANDLER      },  
     { __NR_listen,          DEFAULT_UNTRUSTED,         NO_HANDLER      },  
     { __NR_setsockopt,      untrusted_setsockopt,      NO_HANDLER      }, 
+    { __NR_epoll_ctl,       untrusted_epoll_ctl,       NO_HANDLER      }, 
+    { __NR_epoll_wait,      untrusted_epoll_wait,      NO_HANDLER      }, 
 };
  
 #endif /* end of include guard: POLICY_H */
