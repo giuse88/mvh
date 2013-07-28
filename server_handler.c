@@ -350,10 +350,6 @@ void execution_single_variant(struct thread_group * ths, const struct syscall_he
 
 /****************************************************************************************************************************/ 
 
-
-
-
-
 /*************************** HANDLERS ******************************/ 
 void server_default ( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) { 
  
@@ -804,13 +800,14 @@ void server_write ( struct thread_group * ths, const struct syscall_header * pub
     CLEAN_RES(&result); 
 
     assert( public->syscall_num == __NR_write && private->syscall_num == __NR_write); 
+    assert ( public->regs.arg2 == private->regs.arg2); 
 
     size = public->regs.arg2; 
     public_buf   = malloc(size); 
     private_buf  = malloc(size); 
 
     get_extra_arguments(ths->fds[PUBLIC_UNTRUSTED],public_buf, ths->fds[PRIVATE_UNTRUSTED], private_buf, size); 
-
+    
     buffer_match = memcmp(public_buf, private_buf, size)? false : true; 
 
     if ( public->regs.arg0 == private->regs.arg0 &&  buffer_match &&
@@ -832,7 +829,7 @@ void server_write ( struct thread_group * ths, const struct syscall_header * pub
    if (is_fd_private(ths, public->regs.arg0)){
       execution_private_variant(ths, private, &result);  
    } else {
-      assert(is_fd_public(ths, public->regs.arg0) && !is_fd_private(ths, public->regs.arg0));
+      assert(is_fd_public(ths, public->regs.arg0));
       execution_public_variant(ths, public, &result); 
    }
 
@@ -849,15 +846,9 @@ bool verify_ioctl( struct thread_group * ths, const struct syscall_header * publ
     
     bool fd=false, command = false, buffer=false;
 
-    if ( public->syscall_num != private->syscall_num)
-         return false; 
     // verify FIRST ARGUMENT FD 
-    /*if ( public->regs.arg0 == private->regs.arg0 && */
-         /*IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0))*/
-            /*fd=true;    */
-    /*else if ((get_private_fd(ths, public->regs.arg0) == (int)private->regs.arg0) && */
-             /*(get_public_fd(ths, private->regs.arg0) == (int)public->regs.arg0))*/
-           /*fd= true; */
+    if (public->regs.arg0 == private->regs.arg0) 
+           fd= true; 
   
     if ( public->regs.arg1 == private->regs.arg1)
          command = true;
@@ -873,20 +864,41 @@ bool verify_ioctl( struct thread_group * ths, const struct syscall_header * publ
     return fd && command && buffer; 
 } 
 
+#define OUTPUT 0x01
+#define INPUT  0x02
+#define IO     0x03
+#define MORE   0x04
+
+unsigned short get_ioctl_mode( unsigned command ) {
+
+  switch (command) {
+    case  TCGETS:
+    case  FIONREAD : 
+    case  TIOCGWINSZ:
+        return OUTPUT; 
+    }
+  
+  return -1; 
+} 
+
 void server_ioctl ( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
 
     struct syscall_result result;
-    ssize_t transfered = -1;
     bool check=true; 
+  
+    char * private_buffer=NULL, *public_buffer=NULL; 
 
     DPRINT(DEBUG_INFO, "Start IOCTL handler\n"); 
     assert( public->syscall_num == __NR_ioctl  && private->syscall_num == __NR_ioctl); 
     
+    unsigned short mode=get_ioctl_mode(private->regs.arg1); 
+
+    if ( mode & INPUT) {
     // GET INPUT ARGUMENT 
     // LIGHTHTTP uses the IOCTL with output variables 
-    //get_extra_arguments()
-   
-    check=verify_ioctl(ths, public, private, NULL, NULL); 
+    }
+
+    check=verify_ioctl(ths, public, private, private_buffer,public_buffer); 
 
     if (check) 
         SYSCALL_VERIFIED("IOCTL"); 
@@ -900,32 +912,17 @@ void server_ioctl ( struct thread_group * ths, const struct syscall_header * pub
     } 
     
     CLEAN_RES(&result); 
-    
-    // sends the request to the private application 
-    if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
-            die("failed send request public trusted thread");
   
-    size_t size_buf = get_size_from_cmd(public->regs.arg1);
-    char *buf = malloc(size_buf); 
-    
-    transfered = receive_result_with_extra(ths->fds[PRIVATE_TRUSTED], &result, buf, size_buf);  
-    if ( transfered < 0) 
-        die("Receive result with extra (IOCTL)"); 
+    int fd = public->regs.arg0; 
+    const struct syscall_header *request =  is_fd_public(ths, fd) ? public : private; 
+    process_visibility visibility =   is_fd_public(ths, fd) ? PUBLIC: PRIVATE; 
 
-    assert(transfered == (ssize_t)(SIZE_RESULT + size_buf) || (transfered == (SIZE_RESULT) && (int)result.result < 0)); 
-    
-    result.cookie = public->cookie; 
-    transfered = send_result_with_extra(ths->fds[PUBLIC_UNTRUSTED], &result, buf, size_buf);  
-    if ( transfered < 0) 
-        die("Send result with extra (IOCTL)"); 
-    
-    assert(transfered == (ssize_t)(SIZE_RESULT + size_buf) || (transfered == (SIZE_RESULT) && (int)result.result < 0)); 
-
-    result.cookie = private->cookie;
-    // send results to the untrusted thread private  
-    if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], &result) < 0)
-        die("Failed send request public trusted thread");
-    free(buf); 
+    if ( mode & OUTPUT) {
+        size_t size_comand = get_size_from_cmd(request->regs.arg1); 
+        execution_single_variant_with_extra(ths, request, &result, size_comand, visibility); 
+    }
+    else 
+        execution_single_variant(ths, request, &result, visibility);  
 
     printf("[ PUBLIC  ] ioclt(%ld, %lx, %lx) = %ld\n", public->regs.arg0,  public->regs.arg1, public->regs.arg2, result.result); 
     printf("[ PRIVATE ] ioctl(%ld, %lx, %lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
@@ -1495,7 +1492,7 @@ void initialize_server_handler() {
       { __NR_writev,         server_writev     },
       { __NR_read,           server_read       }, 
       { __NR_lseek,          server_lseek      }, 
-      /*{ __NR_ioctl,          server_ioctl      }, */
+      { __NR_ioctl,          server_ioctl      }, 
       { __NR_fcntl ,         server_fcntl      }, 
       { __NR_getpid,         server_getpid     }, 
       { __NR_getcwd,         server_getcwd     }, 

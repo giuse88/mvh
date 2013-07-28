@@ -15,7 +15,8 @@
 #include "syscall_x64.h"
 #include <sys/syscall.h>
 #include "common.h"
-#include "syscall_table.h" 
+#include "syscall_table.h"
+#include <sys/ioctl.h> 
 
 int  find_function_boundaries( char * instr, char **start, char ** end ) 
 {
@@ -67,13 +68,14 @@ int install_filter(int fd){
     VALIDATE_ARCHITECTURE,
     EXAMINE_SYSCALL,
     ALLOW_SYSCALL(rt_sigreturn),
-    ALLOW_SYSCALL(rt_sigaction),
+    /*ALLOW_SYSCALL(rt_sigaction),*/
     ALLOW_ARGUMENT(write, 0, fd),
     ALLOW_ARGUMENT(read, 0, fd),
     ALLOW_ARGUMENT(sendmsg, 0, fd),
     ALLOW_ARGUMENT(recvmsg, 0, fd),
     ALLOW_ARGUMENT(writev, 0, fd),
     ALLOW_ARGUMENT(readv, 0, fd),
+    ALLOW_ARGUMENT(ioctl, 1, TCGETS),
 #ifdef DEBUG
     ALLOW_ARGUMENT(write , 0, STDERR_FILENO),
 #endif

@@ -509,8 +509,9 @@ u64_t untrusted_write(const ucontext_t * uc ){
    struct syscall_result result; 
    char * buf = NULL;  
    size_t size =0; 
-   u64_t extra =0;  
- 
+   u64_t extra =0; 
+   ssize_t transfered = -1; 
+
    UNTRUSTED_START("WRITE");
 
    CLEAN_RES(&result); 
@@ -518,14 +519,16 @@ u64_t untrusted_write(const ucontext_t * uc ){
    buf = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
    size  = uc->uc_mcontext.gregs[REG_ARG2];
    extra = size; 
-  
+ 
+   DPRINT(DEBUG_INFO, " write(%d, %s, %lu)\n", (int)uc->uc_mcontext.gregs[REG_ARG0], buf, size); 
+
    if (send_syscall_header(uc, extra)< 0)
       die("Send syscall header"); 
   
-   if (send_extra(get_local_fd(), buf, size) < 0) 
+   if ( (transfered = send_extra(get_local_fd(), buf, size)) < 0) 
        die("Failed send extra (Untrudted write)"); 
   
-   DPRINT(DEBUG_INFO, "Sent data"); 
+   DPRINT(DEBUG_INFO, "Sent data %ld", transfered); 
 
    if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result"); 
@@ -617,17 +620,6 @@ u64_t untrusted_ioctl(const ucontext_t * uc ){
 
   UNTRUSTED_START("IOCTL"); 
 
- /* buf = (char *)uc->uc_mcontext.gregs[REG_ARG2]; */
-  /*size = get_size_from_cmd((int)uc->uc_mcontext.gregs[REG_ARG1]); */
-
-
-  /*untrusted_default(uc); */
-  
-  /*for (int i=0; i< size; i++)*/
-    /*DPRINT(DEBUG_INFO, "%d : %X\n", i, *(buf + i)); */
-
-  /*return;*/
-
   if (IS_STD_FD(uc->uc_mcontext.gregs[REG_ARG0]))
       return untrusted_default(uc); 
 
@@ -639,22 +631,19 @@ u64_t untrusted_ioctl(const ucontext_t * uc ){
 
   DPRINT(DEBUG_INFO, "IOCTL buffer has size %ld\n", size); 
  
- /* if (send_syscall_header(uc, extra)< 0)*/
-       /*die("Send syscall header"); */
-  
   if((transfered = receive_result_with_extra(fd, &res, buf, size)) < 0)
      die("Receive result error (IOCTL)"); 
  
-/*   for (int i=0; i< size; i++)*/
-    /*DPRINT(DEBUG_INFO, "%d : %X\n", i, *(buf + i)); */
-
-  assert(transfered == (ssize_t)(SIZE_RESULT + size) || (transfered == (SIZE_RESULT) && (int)res.result < 0)); 
+  DPRINT(DEBUG_INFO, "IOCTL received %ld, content %d\n", transfered, *(int*)buf); 
+  
+  CHECK(transfered, size + SIZE_RESULT, res.extra);  
   assert(res.cookie == cookie); 
 
   UNTRUSTED_END("IOCTL"); 
   
   return (u64_t)res.result; 
 }
+
 void  trusted_ioctl ( int fd, const struct syscall_header * header) {
 
   struct syscall_result result; 
@@ -684,7 +673,7 @@ void  trusted_ioctl ( int fd, const struct syscall_header * header) {
  
   result.result = do_syscall(&request);
   result.cookie = header->cookie; 
-  result.extra = 0; 
+  result.extra = (int)result.result > 0 ? size_buf : 0; 
  
   /*for (int i=0; i< size_buf; i++)*/
     /*printf("%d : %X\n", i,  *(buf + i)); */
@@ -1064,7 +1053,7 @@ u64_t untrusted_writev(const ucontext_t * uc) {
  
    // send iovec structures 
    if (send_extra(fd, buf, size) < 0) 
-       die("Failed send extra (Untrudted write)"); 
+       die("Failed send extra (Untrudted writev)"); 
    
    DPRINT(DEBUG_INFO, "--- Sent iovec structures %ld\n", size); 
       // send data via wrivev
