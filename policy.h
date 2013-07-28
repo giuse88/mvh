@@ -47,7 +47,7 @@ const struct policy public_policy[] = {
     { __NR_socket,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},  
     { __NR_bind,            untrusted_bind,            DEFAULT_TRUSTED},  
     { __NR_listen,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},  
-    { __NR_accept,          untrusted_accept,          DEFAULT_TRUSTED},  
+    { __NR_accept,          untrusted_accept,          trusted_accept },  
     { __NR_setsockopt,      untrusted_setsockopt,      DEFAULT_TRUSTED}, 
     { __NR_epoll_ctl,       untrusted_epoll_ctl,       DEFAULT_TRUSTED}, 
     { __NR_epoll_wait,      untrusted_epoll_wait,      trusted_epoll_wait }, 

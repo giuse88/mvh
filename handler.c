@@ -634,13 +634,12 @@ u64_t untrusted_ioctl(const ucontext_t * uc ){
   if((transfered = receive_result_with_extra(fd, &res, buf, size)) < 0)
      die("Receive result error (IOCTL)"); 
  
-  DPRINT(DEBUG_INFO, "IOCTL received %ld, content %d\n", transfered, *(int*)buf); 
+  DPRINT(DEBUG_INFO, "IOCTL received %d, content %d\n", transfered, *(int*)buf); 
   
   CHECK(transfered, size + SIZE_RESULT, res.extra);  
   assert(res.cookie == cookie); 
 
-  UNTRUSTED_END("IOCTL"); 
-  
+  UNTRUSTED_END("IOCTL");  
   return (u64_t)res.result; 
 }
 
@@ -1022,15 +1021,66 @@ u64_t untrusted_accept(const ucontext_t * uc ){
   
    if (send_extra(fd, buf, size) < 0) 
      die("Failed send extra (Untrudted write)"); 
-  
+
+   DPRINT(DEBUG_INFO," FFFF"); 
    if(receive_syscall_result(&res) < 0 )
        die("failede get_syscall_result"); 
-
    assert( cookie == res.cookie);
-
+   DPRINT(DEBUG_INFO," FFFF"); 
+   
+   if (res.extra){ 
+      char * addr_struct =  (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
+      socklen_t * len = (socklen_t *)uc->uc_mcontext.gregs[REG_ARG2]; 
+      *len=(socklen_t)res.extra; 
+      int recv =-1; 
+      if( (recv=read(fd,addr_struct,*len)) < 0 )
+        die("Error receiving extra data"); 
+      assert(*len == recv); 
+      DPRINT(DEBUG_INFO, "--- Received %d extra\n", recv); 
+   }  
    UNTRUSTED_END("ACCEPT"); 
    return (u64_t)res.result; 
 }
+
+
+void  trusted_accept   ( int fd, const struct syscall_header * header) {
+
+  struct syscall_result result; 
+  struct syscall_request request;
+  ssize_t transfered =-1; 
+  
+  CLEAN_RES(&result); 
+  CLEAN_REQ(&request); 
+
+  TRUSTED_START("ACCEPT"); 
+  
+  assert(header->syscall_num == __NR_accept); 
+  
+  request.syscall_identifier = header->syscall_num; 
+  memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
+  
+  DPRINT(DEBUG_INFO, ">>> The size of the structure is %d\n", *(socklen_t*)header->regs.arg2); 
+
+  result.result = do_syscall(&request);
+  result.cookie = header->cookie; 
+  
+  size_t buf_len = *(socklen_t*)header->regs.arg2; 
+  result.extra = buf_len; 
+
+  DPRINT(DEBUG_INFO, ">>> The size of the structure is %lu\n", buf_len); 
+
+  transfered =send_result_with_extra(fd, &result, (char *)header->regs.arg1, buf_len);  
+  if ( transfered < 0) 
+      die("recvmsg (fstat handler)"); 
+  CHECK(transfered, buf_len + SIZE_RESULT, result.extra); 
+  
+  TRUSTED_END("ACCEPT"); 
+
+  return; 
+}
+
+
+
 
 u64_t untrusted_writev(const ucontext_t * uc) {
 

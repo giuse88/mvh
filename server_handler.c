@@ -1357,6 +1357,7 @@ void server_accept( struct thread_group * ths, const struct syscall_header * pub
     struct syscall_result result; 
     socklen_t public_len, private_len; 
     bool buffer_match; 
+    ssize_t transfered = -1; 
 
     assert(public->syscall_num == private->syscall_num); 
 
@@ -1371,15 +1372,42 @@ void server_accept( struct thread_group * ths, const struct syscall_header * pub
        SYSCALL_NO_VERIFIED("ACCEPT"); 
 
     assert(is_fd_public(ths, public->regs.arg0) && get_fd_type(ths, public->regs.arg0, PUBLIC) == SOCKET_FD);
+    
+    if(forward_syscall_request(ths->fds[PUBLIC_TRUSTED], public) < 0)
+            die("Failed send request to trusted thread");
 
-    // TODO THIS is an error we must copy the result from the public to the private 
-    // However this depends on if addr (arg1) is null or not 
-    execution_public_variant(ths, public, &result);  
+   if (receive_syscall_result_async(ths->fds[PUBLIC_TRUSTED], &result) < 0) 
+        die("Error receiving result from the truste thread"); 
 
+    assert(result.extra); 
+    // extra contains the size of the structures 
+    char * buf = malloc(result.extra); 
+    size_t size = (size_t)result.extra; 
+    ssize_t r;
+
+    if ((r=read(ths->fds[PUBLIC_TRUSTED], buf, size)) < 0) 
+        die("Error accpet reading values"); 
+
+    assert(r == size);
+
+    result.cookie = private->cookie;
+    if((transfered=send_result_with_extra(ths->fds[PRIVATE_UNTRUSTED], &result, buf, size)) < 0)
+       die("Failed sending result (READ)");
+
+   CHECK(transfered, size + SIZE_RESULT, result.extra);  
+ 
+   result.cookie = public->cookie;
+   result.extra  = 0;
+   // send results to the untrusted thread private  
+   if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], &result) < 0)
+       die("Failed send request public trusted thread");
+    
+   /****************************************************************/
+    // FD
     if (save_fd(ths, result.result, SOCKET_FD, PUBLIC) < 0 )  
         irreversible_error("FD space finished"); 
     
-    printf("FD : %d %d\n", result.result, is_fd_public(ths, result.result)); 
+    printf("FD : %d %d\n", (int)result.result, is_fd_public(ths, result.result)); 
     assert(is_fd_public(ths, result.result));  
     
     printf("[ public  ] accept(%ld, 0x%lx, 0x%lx(%d)) = %ld\n", public->regs.arg0, public->regs.arg1,
