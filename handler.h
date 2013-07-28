@@ -62,6 +62,7 @@ extern void trusted_exit_group( int, const struct syscall_header *);
 extern u64_t untrusted_open    (const ucontext_t * uc);
 extern u64_t untrusted_openat  (const ucontext_t * uc);
 extern u64_t untrusted_write   (const ucontext_t * uc);
+extern u64_t untrusted_writev   (const ucontext_t * uc);
 
 extern u64_t untrusted_getdents  (const ucontext_t * uc); 
 extern void  trusted_getdents    ( int, const struct syscall_header *);
@@ -91,4 +92,7 @@ extern u64_t untrusted_epoll_ctl(const ucontext_t * uc );
 
 extern u64_t untrusted_epoll_wait(const ucontext_t * uc ); 
 extern void  trusted_epoll_wait  ( int fd, const struct syscall_header * header); 
+
+extern u64_t untrusted_accept(const ucontext_t * uc ); 
+extern void  trusted_accept ( int fd, const struct syscall_header * header); 
 #endif /* end of include guard: HANDLER_H */

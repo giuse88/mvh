@@ -765,7 +765,6 @@ void  trusted_getcwd  ( int fd, const struct syscall_header * header) {
 
   return; 
 }
-
 u64_t untrusted_stat_priv(const ucontext_t * uc ){
 
   struct syscall_result res; 
@@ -794,6 +793,7 @@ u64_t untrusted_stat_priv(const ucontext_t * uc ){
   UNTRUSTED_END("STAT"); 
   return (u64_t)res.result; 
 }
+
 u64_t untrusted_stat_pub(const ucontext_t * uc ){
 
   struct syscall_result res; 
@@ -940,7 +940,7 @@ u64_t untrusted_epoll_ctl(const ucontext_t * uc ){
        die("Failed send extra (Untrudted write)"); 
   
    if(receive_syscall_result(&result) < 0 )
-       die("Failede get_syscall_result"); 
+       die("failede get_syscall_result"); 
 
    UNTRUSTED_END("EPOLL_CTL"); 
    return (u64_t)result.result; 
@@ -1010,6 +1010,81 @@ void  trusted_epoll_wait ( int fd, const struct syscall_header * header) {
   
   return; 
 }
+
+u64_t untrusted_accept(const ucontext_t * uc ){
+
+   struct syscall_result res; 
+   char * buf = NULL;  
+   size_t size =0; 
+   u64_t extra =0;  
+   int fd =  get_local_fd();
+   u64_t cookie = get_local_tid();
+   ssize_t  transfered = -1; 
+
+   UNTRUSTED_START("ACCEPT");
+   CLEAN_RES(&res); 
+
+   buf = (char *)uc->uc_mcontext.gregs[REG_ARG2]; 
+   size  = sizeof(socklen_t);
+   extra = size; 
+  
+   if (send_syscall_header(uc, extra)< 0)
+      die("Send syscall header"); 
+  
+   if (send_extra(fd, buf, size) < 0) 
+     die("Failed send extra (Untrudted write)"); 
+  
+   if(receive_syscall_result(&res) < 0 )
+       die("failede get_syscall_result"); 
+
+   assert( cookie == res.cookie);
+
+   UNTRUSTED_END("ACCEPT"); 
+   return (u64_t)res.result; 
+}
+
+u64_t untrusted_writev(const ucontext_t * uc) {
+
+   struct syscall_result result; 
+   char * buf = NULL;  
+   size_t size =0; 
+   u64_t extra =0;  
+   int fd =  get_local_fd();
+   ssize_t transfered =-1; 
+
+   UNTRUSTED_START("WRITE");
+   CLEAN_RES(&result); 
+
+   buf = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
+   size  = uc->uc_mcontext.gregs[REG_ARG2] * sizeof ( struct iovec);
+   extra = size; 
+  
+   if (send_syscall_header(uc, extra)< 0)
+      die("Send syscall header"); 
+ 
+   // send iovec structures 
+   if (send_extra(fd, buf, size) < 0) 
+       die("Failed send extra (Untrudted write)"); 
+   
+   DPRINT(DEBUG_INFO, "--- Sent iovec structures %ld\n", size); 
+      // send data via wrivev
+   struct iovec  *iov = ( struct iovec *) uc->uc_mcontext.gregs[REG_ARG1];
+   int iovec_num      = (int) uc->uc_mcontext.gregs[REG_ARG2]; 
+
+   if ( (transfered = writev(fd, iov, iovec_num)) < 0 )
+      die("WRITEV untrusted"); 
+
+   DPRINT(DEBUG_INFO, "--- Writev sent %ld\n", transfered); 
+
+   if(receive_syscall_result(&result) < 0 )
+       die("Failede get_syscall_result"); 
+
+   assert((u64_t)result.cookie == get_local_tid()); 
+
+   UNTRUSTED_END("WRITEV"); 
+   return (u64_t)result.result; 
+}
+
 /*[> CLONE <] */
 /*u64_t clone_untrusted ( const ucontext_t * context) {*/
 

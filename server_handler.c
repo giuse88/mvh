@@ -61,14 +61,21 @@ process_visibility get_fd_visibility(const struct thread_group * ths, int fd) {
             return ths->fd_maps[i].visibility; 
   return -1; 
 }
-
 fd_type get_fd_type(const struct thread_group * ths, int fd, process_visibility vis) {
   for (int i=0; i < MAX_FD; i++) 
         if ( ths->fd_maps[i].fd == fd && ths->fd_maps[i].visibility == vis) 
             return ths->fd_maps[i].type; 
   return -1; 
 }
-
+int save_fd(struct thread_group * ths, int fd, fd_type type, process_visibility vis) {
+    int index = get_free_fd(ths);
+    if ( index < 0 )
+      return -1;
+    ths->fd_maps[index].fd         = fd; 
+    ths->fd_maps[index].type       = type; 
+    ths->fd_maps[index].visibility = vis; 
+    return index; 
+}
 /* Useful functions */ 
 void  syscall_info(const struct  syscall_header * head, const struct syscall_registers *reg, const struct  syscall_result *res, process_visibility vis) {
     static bool first = true; 
@@ -1106,6 +1113,7 @@ void server_fcntl( struct thread_group * ths, const struct syscall_header * publ
         SYSCALL_NO_VERIFIED("FCNTL"); 
 
     fd = private->regs.arg0; 
+    printf("FD : %d %d\n", fd, is_fd_public(ths, fd)); 
 
     if (is_fd_public(ths, fd)){
       execution_public_variant(ths, public, &result); 
@@ -1346,6 +1354,126 @@ void server_epoll_wait( struct thread_group * ths, const struct syscall_header *
                                                     private->regs.arg2, private->regs.arg3, result.result); 
     return; 
 }
+   
+void server_accept( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+    socklen_t public_len, private_len; 
+    bool buffer_match; 
+
+    assert(public->syscall_num == private->syscall_num); 
+
+    get_extra_arguments(ths->fds[PUBLIC_UNTRUSTED], (char *)&public_len, ths->fds[PRIVATE_UNTRUSTED],
+                        (char *)&private_len, sizeof(socklen_t)); 
+    
+    buffer_match = (public_len == private_len ) ? true : false ; 
+    
+    if ( (public->regs.arg0 == private->regs.arg0 ) &&  buffer_match )
+       SYSCALL_VERIFIED("ACCEPT"); 
+    else 
+       SYSCALL_NO_VERIFIED("ACCEPT"); 
+
+    assert(is_fd_public(ths, public->regs.arg0) && get_fd_type(ths, public->regs.arg0, PUBLIC) == SOCKET_FD);
+
+    // TODO THIS is an error we must copy the result from the public to the private 
+    // However this depends on if addr (arg1) is null or not 
+    execution_public_variant(ths, public, &result);  
+
+    if (save_fd(ths, result.result, SOCKET_FD, PUBLIC) < 0 )  
+        irreversible_error("FD space finished"); 
+    
+    printf("FD : %d %d\n", result.result, is_fd_public(ths, result.result)); 
+    assert(is_fd_public(ths, result.result));  
+    
+    printf("[ public  ] accept(%ld, 0x%lx, 0x%lx(%d)) = %ld\n", public->regs.arg0, public->regs.arg1,
+                                                    public->regs.arg2,  public_len, result.result); 
+    printf("[ private ] accept(%ld, 0x%lx, 0x%lx(%d)) = %ld\n", private->regs.arg0, private->regs.arg1 ,
+                                                    private->regs.arg2, private_len, result.result); 
+    return; 
+}
+
+void server_writev ( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+    struct iovec * private_io, *public_io;
+    size_t num_buffers=0;
+    const size_t size_iovec = sizeof(struct iovec);
+    bool buffer_match = false; 
+
+    DPRINT(DEBUG_INFO, "WRITEV SYSTEM CALL\n"); 
+    CLEAN_RES(&result); 
+
+    assert( public->syscall_num == __NR_writev && private->syscall_num == __NR_writev); 
+    assert (public->regs.arg2  == private->regs.arg2); 
+    num_buffers = public->regs.arg2; 
+  
+    public_io =  calloc ( size_iovec, num_buffers);
+    private_io = calloc ( size_iovec, num_buffers);
+
+    get_extra_arguments(ths->fds[PUBLIC_UNTRUSTED],  (char*)public_io,
+                        ths->fds[PRIVATE_UNTRUSTED], (char*)private_io, size_iovec * num_buffers); 
+
+    DPRINT(DEBUG_INFO, "Number of buffers %lu\n", num_buffers); 
+
+
+    for ( int i = 0; i < (int)num_buffers; i++) {
+
+      assert(private_io[i].iov_len == public_io[i].iov_len);
+    
+      private_io[i].iov_base = malloc(private_io[i].iov_len);
+      public_io[i].iov_base  = malloc(public_io[i].iov_len);
+
+      if (!private_io[i].iov_base  ||  !public_io[i].iov_base)
+          die("Warning allication buffer error");     
+    
+      DPRINT(DEBUG_INFO, "Public  allocate %lu at %p  index %d\n", public_io[i].iov_len,  public_io[i].iov_base, i);
+      DPRINT(DEBUG_INFO, "Private allocate %lu at %p  index %d\n", private_io[i].iov_len, private_io[i].iov_base, i);
+
+    }
+  
+    if (readv(ths->fds[PUBLIC_UNTRUSTED],  public_io,  num_buffers) < 0 ) 
+        die("readv"); 
+    
+    if (readv(ths->fds[PRIVATE_UNTRUSTED],  private_io,  num_buffers) < 0 ) 
+        die("readv"); 
+   
+    buffer_match = true; 
+    for ( int i = 0; i < (int)num_buffers; i++) 
+        buffer_match &= !memcmp(private_io[i].iov_base, public_io[i].iov_base, public_io[i].iov_len); 
+      
+
+    if ( public->regs.arg0 == private->regs.arg0 &&  buffer_match &&
+         public->regs.arg2 == private->regs.arg2 ) 
+        SYSCALL_VERIFIED("WRITEV"); 
+    else 
+        SYSCALL_NO_VERIFIED("WRITEV"); 
+
+   if(IS_STD_FD(public->regs.arg0) && IS_STD_FD(private->regs.arg0)) {
+         DPRINT(DEBUG_INFO, "WRITEV called with default file descriptor\n"); 
+         server_default(ths, public, private);
+         return;
+   } 
+
+   if (is_fd_private(ths, public->regs.arg0)){
+      execution_private_variant(ths, private, &result);  
+   } else {
+      assert(is_fd_public(ths, public->regs.arg0) && !is_fd_private(ths, public->regs.arg0));
+      execution_public_variant(ths, public, &result); 
+   }
+
+    printf("[ PUBLIC  ] writev(%ld, %lx, %ld) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); 
+    printf("[ PRIVATE ] writev(%ld, %lx, %ld) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
+
+    for ( int i = 0; i < (int)num_buffers; i++){
+      free(private_io[i].iov_base);
+      free(public_io[i].iov_base);
+    }
+
+    free(private_io); 
+    free(public_io); 
+    return; 
+}
+
 
 /************** INSTALL SERVER HANDLER *****************************/ 
 void initialize_server_handler() { 
@@ -1364,6 +1492,7 @@ void initialize_server_handler() {
       { __NR_mmap,           server_mmap       },
       { __NR_close,          server_close      },
       { __NR_write,          server_write      },
+      { __NR_writev,         server_writev     },
       { __NR_read,           server_read       }, 
       { __NR_lseek,          server_lseek      }, 
       /*{ __NR_ioctl,          server_ioctl      }, */
@@ -1374,6 +1503,7 @@ void initialize_server_handler() {
       { __NR_socket,         server_socket     }, 
       { __NR_bind,           server_bind       }, 
       { __NR_listen,         server_listen     }, 
+      { __NR_accept,         server_accept     }, 
       { __NR_setsockopt,     server_setsockopt }, 
       { __NR_epoll_create,   server_epoll_create}, 
       { __NR_epoll_ctl,      server_epoll_ctl   }, 
