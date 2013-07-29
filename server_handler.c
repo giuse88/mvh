@@ -1500,6 +1500,27 @@ void server_writev ( struct thread_group * ths, const struct syscall_header * pu
 }
 
 
+void server_shutdown( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+
+    assert(public->syscall_num  == __NR_shutdown && 
+           private->syscall_num == __NR_shutdown ); 
+
+    if ( (public->regs.arg0 == private->regs.arg0) && 
+         (public->regs.arg1 == private->regs.arg1) )
+        SYSCALL_VERIFIED("SHUTDOWN"); 
+    else 
+        SYSCALL_NO_VERIFIED("SHUTDOWN"); 
+
+    assert(is_fd_public(ths, public->regs.arg0)); 
+    execution_public_variant(ths, public,  &result);  
+
+    printf("[ public  ] listen(%ld, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1, result.result); 
+    printf("[ private ] listen(%ld, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, result.result); 
+
+    return; 
+}
 /************** INSTALL SERVER HANDLER *****************************/ 
 void initialize_server_handler() { 
 
@@ -1528,6 +1549,7 @@ void initialize_server_handler() {
       { __NR_socket,         server_socket     }, 
       { __NR_bind,           server_bind       }, 
       { __NR_listen,         server_listen     }, 
+      { __NR_shutdown,       server_shutdown   }, 
       { __NR_accept,         server_accept     }, 
       { __NR_setsockopt,     server_setsockopt }, 
       { __NR_epoll_create,   server_epoll_create}, 
