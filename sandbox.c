@@ -75,7 +75,7 @@ void setup_signal_handlers() {
 	sigaddset(&mask, SIGSYS);
 	sigaddset(&mask, SIGCHLD);
   sigaddset(&mask, SIGSEGV);
-
+ 
   sa.sa_handler = SIG_DFL;
   sigaction(SIGCHLD, &sa, NULL);
   

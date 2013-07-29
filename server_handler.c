@@ -1516,8 +1516,40 @@ void server_shutdown( struct thread_group * ths, const struct syscall_header * p
     assert(is_fd_public(ths, public->regs.arg0)); 
     execution_public_variant(ths, public,  &result);  
 
-    printf("[ public  ] listen(%ld, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1, result.result); 
-    printf("[ private ] listen(%ld, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, result.result); 
+    printf("[ public  ] shutdown(%ld, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1, result.result); 
+    printf("[ private ] shutdown(%ld, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, result.result); 
+
+    return; 
+}
+
+void server_sigaction( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+    struct syscall_result result; 
+
+    assert(public->syscall_num  == __NR_rt_sigaction && 
+           private->syscall_num == __NR_rt_sigaction ); 
+
+    if ( public->regs.arg0 == private->regs.arg0 ) 
+        SYSCALL_VERIFIED("SHUTDOWN"); 
+    else 
+        SYSCALL_NO_VERIFIED("SHUTDOWN"); 
+ 
+   result.cookie = public->cookie;
+   result.extra  = 0;
+   result.result = 0; 
+   // send results to the untrusted thread private  
+   if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], &result) < 0)
+       die("Failed send request public trusted thread");
+   
+   result.cookie = private->cookie;
+   // send results to the untrusted thread private  
+   if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], &result) < 0)
+       die("Failed send request public trusted thread");
+   
+   DPRINT(DEBUG_INFO, "Syscall sigaction nullified\n");
+
+    printf("[ public  ] sigaction(%ld, 0x%lx, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1, public->regs.arg2, result.result); 
+    printf("[ private ] sigaction(%ld, 0x%lx, 0x%lx) = %ld\n", private->regs.arg0, private->regs.arg1, public->regs.arg2, result.result); 
 
     return; 
 }
@@ -1542,6 +1574,7 @@ void initialize_server_handler() {
       { __NR_read,           server_read       }, 
       { __NR_lseek,          server_lseek      }, 
       { __NR_ioctl,          server_ioctl      }, 
+      { __NR_rt_sigaction,   server_sigaction  }, 
       { __NR_fcntl ,         server_fcntl      }, 
       { __NR_getpid,         server_getpid     }, 
       { __NR_getcwd,         server_getcwd     }, 
