@@ -27,7 +27,8 @@ typedef enum{EMPTY_FD=0, FILE_FD, SOCKET_FD, POLL_FD} fd_type;
 struct fd_info{
     fd_type type;
     process_visibility visibility; 
-    int fd; 
+    int private_fd;
+    int public_fd; 
 }; 
 
 struct thread_group {
