@@ -1042,7 +1042,6 @@ u64_t untrusted_accept(const ucontext_t * uc ){
    return (u64_t)res.result; 
 }
 
-
 void  trusted_accept   ( int fd, const struct syscall_header * header) {
 
   struct syscall_result result; 
@@ -1078,9 +1077,6 @@ void  trusted_accept   ( int fd, const struct syscall_header * header) {
 
   return; 
 }
-
-
-
 
 u64_t untrusted_writev(const ucontext_t * uc) {
 
@@ -1123,6 +1119,77 @@ u64_t untrusted_writev(const ucontext_t * uc) {
    UNTRUSTED_END("WRITEV"); 
    return (u64_t)result.result; 
 }
+
+void  trusted_sendfile_priv   ( int fd, const struct syscall_header * header) {
+
+  struct syscall_result result; 
+  ssize_t transfered =-1; 
+  char * buf = NULL; 
+  int source_fd =-1; 
+
+  CLEAN_RES(&result); 
+
+  TRUSTED_START("SENDFILE"); 
+  
+  assert(header->syscall_num == __NR_sendfile); 
+  
+  source_fd = header->regs.arg1; 
+  DPRINT(DEBUG_INFO, ">>> The source fd id %d\n", source_fd);
+  
+  if ((transfered =sendfile(fd, source_fd, header->regs.arg2,header->regs.arg3)) < 0)
+      die("sendfile");
+
+  assert( (size_t)transfered == header->regs.arg3); 
+  
+  result.extra = transfered; 
+  result.extra = transfered; 
+  result.cookie = header->cookie; 
+ 
+  send_syscall_result(fd, &result); 
+
+  TRUSTED_END("SENDFILE"); 
+
+  return; 
+}
+
+void  trusted_sendfile_pub   ( int fd, const struct syscall_header * header) {
+
+  struct syscall_result result; 
+  ssize_t transfered =-1; 
+  int dest_fd =-1; 
+
+  CLEAN_RES(&result); 
+
+  TRUSTED_START("SENDFILE"); 
+  
+  assert(header->syscall_num == __NR_sendfile); 
+  
+  dest_fd = header->regs.arg0; 
+  DPRINT(DEBUG_INFO, ">>> The destination fd id %d\n", dest_fd);
+ 
+  size_t size = header->regs.arg3; 
+  char * buf= malloc(size); 
+
+  if ((transfered = receive_extra(fd, buf, size)) < 0)
+      die("sendfile");
+  assert( (size_t)transfered == header->regs.arg3); 
+
+  if ( (transfered = write(dest_fd, buf, size)) < 0) 
+      die("write sendfile");
+
+  assert( (size_t)transfered == header->regs.arg3); 
+  
+  result.extra = transfered; 
+  result.extra = transfered; 
+  result.cookie = header->cookie; 
+ 
+  send_syscall_result(fd, &result); 
+
+  TRUSTED_END("SENDFILE"); 
+
+  return; 
+}
+
 
 /*[> CLONE <] */
 /*u64_t clone_untrusted ( const ucontext_t * context) {*/

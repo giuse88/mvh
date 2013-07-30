@@ -51,6 +51,7 @@ const struct policy public_policy[] = {
     { __NR_setsockopt,      untrusted_setsockopt,      DEFAULT_TRUSTED}, 
     { __NR_epoll_ctl,       untrusted_epoll_ctl,       DEFAULT_TRUSTED}, 
     { __NR_epoll_wait,      untrusted_epoll_wait,      trusted_epoll_wait }, 
+    { __NR_sendfile,        DEFAULT_UNTRUSTED,         trusted_sendfile_pub}, 
 };
 
 //PRIVATE APPLICATION
@@ -84,6 +85,7 @@ const struct policy private_policy[] = {
     { __NR_setsockopt,      untrusted_setsockopt,      NO_HANDLER      }, 
     { __NR_epoll_ctl,       untrusted_epoll_ctl,       NO_HANDLER      }, 
     { __NR_epoll_wait,      untrusted_epoll_wait,      NO_HANDLER      }, 
+    { __NR_sendfile,        DEFAULT_UNTRUSTED,         trusted_sendfile_priv }, 
 };
  
 #endif /* end of include guard: POLICY_H */

@@ -1592,11 +1592,12 @@ void server_writev ( struct thread_group * ths, const struct syscall_header * pu
 void server_shutdown( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
 
     struct syscall_result result; 
+    struct fd_info pair; 
 
     assert(public->syscall_num  == __NR_shutdown && 
            private->syscall_num == __NR_shutdown ); 
 
-    if ( (public->regs.arg0 == private->regs.arg0) && 
+    if ( get_fd_info(ths, public->regs.arg0, private->regs.arg0,&pair) && 
          (public->regs.arg1 == private->regs.arg1) )
         SYSCALL_VERIFIED("SHUTDOWN"); 
     else 
@@ -1642,6 +1643,80 @@ void server_sigaction( struct thread_group * ths, const struct syscall_header * 
 
     return; 
 }
+
+void server_sendfile( struct thread_group * ths, const struct syscall_header * public, const struct syscall_header *private){
+
+    struct syscall_result public_result, private_result; 
+    char  *buffer=NULL;
+    size_t size =0; 
+    struct fd_info out_pair, input_pair;
+    bool fd_match = false; 
+    ssize_t transfered = false; 
+
+    DPRINT(DEBUG_INFO, "SENDFILE SYSTEM CALL\n"); 
+
+    assert( public->syscall_num == __NR_sendfile && private->syscall_num == __NR_sendfile); 
+    assert ( public->regs.arg3 == private->regs.arg3); 
+
+    size    = public->regs.arg3; 
+    buffer  = malloc(size); 
+
+    fd_match = get_fd_info(ths, public->regs.arg0, private->regs.arg0, &out_pair) && 
+               get_fd_info(ths, public->regs.arg1, private->regs.arg1, &input_pair);
+
+    if ( fd_match &&
+        public->regs.arg3 == private->regs.arg3 ) 
+        SYSCALL_VERIFIED("SENDFILE"); 
+    else 
+        SYSCALL_NO_VERIFIED("SENDFILE"); 
+
+    if ( out_pair.visibility == PUBLIC)  {
+
+        off_t off; 
+
+        if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
+            die("Failed send request to trusted thread");
+      
+        if(forward_syscall_request(ths->fds[PUBLIC_TRUSTED], public) < 0)
+            die("Failed send request to trusted thread");
+      
+        if((transfered = receive_extra(ths->fds[PRIVATE_TRUSTED], buffer, size)) < 0)
+            die("Failed receive result trusted thread");
+
+        assert( transfered == size); 
+        
+        if(receive_syscall_result(ths->fds[PRIVATE_TRUSTED], &private_result) < 0)
+          die("Receiving result"); 
+
+        if((transfered = send_extra(ths->fds[PUBLIC_TRUSTED], buffer, size)) < 0)
+            die("Failed receive result trusted thread");
+
+        assert( transfered == size); 
+        
+        if(receive_syscall_result(ths->fds[PUBLIC_TRUSTED], &public_result) < 0)
+          die("Receiving result"); 
+
+        if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], &public_result) < 0)
+            die("forward_syscall_result");
+       
+        if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], &private_result) < 0)
+            die("forward_syscall_result");
+       
+    } else 
+          irreversible_error("Not Implemented yet"); 
+    
+    printf("[ PUBLIC  ] write(%ld, %ld,  %lx, %ld) = %ld\n", public->regs.arg0,  public->regs.arg1, public->regs.arg2, 
+                                                             public->regs.arg3,  public_result.result); 
+    
+    printf("[ PRIVATE ] write(%ld, %ld,  %lx, %ld) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2,
+                                                             private->regs.arg3, private_result.result); 
+
+    free(buffer); 
+    return; 
+} 
+
+
+
 /************** INSTALL SERVER HANDLER *****************************/ 
 void initialize_server_handler() { 
 
@@ -1671,6 +1746,7 @@ void initialize_server_handler() {
       { __NR_socket,         server_socket     }, 
       { __NR_bind,           server_bind       }, 
       { __NR_listen,         server_listen     }, 
+      { __NR_sendfile,       server_sendfile   }, 
       { __NR_shutdown,       server_shutdown   }, 
       { __NR_accept,         server_accept     }, 
       { __NR_setsockopt,     server_setsockopt }, 

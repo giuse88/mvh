@@ -95,4 +95,7 @@ extern void  trusted_epoll_wait  ( int fd, const struct syscall_header * header)
 
 extern u64_t untrusted_accept(const ucontext_t * uc ); 
 extern void  trusted_accept ( int fd, const struct syscall_header * header); 
+
+extern void  trusted_sendfile_priv ( int fd, const struct syscall_header * header); 
+extern void  trusted_sendfile_pub ( int fd, const struct syscall_header * header); 
 #endif /* end of include guard: HANDLER_H */
