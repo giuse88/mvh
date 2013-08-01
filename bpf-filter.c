@@ -68,7 +68,7 @@ int install_filter(int fd){
     VALIDATE_ARCHITECTURE,
     EXAMINE_SYSCALL,
     ALLOW_SYSCALL(rt_sigreturn),
-    /*ALLOW_SYSCALL(rt_sigaction),*/
+    ALLOW_SYSCALL(brk),
     ALLOW_ARGUMENT(write, 0, fd),
     ALLOW_ARGUMENT(read, 0, fd),
     ALLOW_ARGUMENT(sendmsg, 0, fd),

@@ -22,8 +22,10 @@ ssize_t receive_result_with_extra(int fd, struct syscall_result * result,  char 
     left = extra_size;
     ptr = buf;
 
-    if (!result->extra)
-        return transfered_result; 
+    if (!result->extra) {
+        DPRINT(DEBUG_INFO, "------ EXTRA NOT COPIED\n"); 
+        return transfered_result;
+    }
 
     do { 
       temp = read(fd,ptr,left);       

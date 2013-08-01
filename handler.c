@@ -939,6 +939,7 @@ u64_t untrusted_epoll_wait(const ucontext_t * uc ){
    struct syscall_result res; 
    char * buf = NULL;  
    size_t size =0; 
+   int events_numbers = 0; 
    u64_t extra =0;  
    int fd =  get_local_fd();
    u64_t cookie = get_local_tid();
@@ -949,16 +950,16 @@ u64_t untrusted_epoll_wait(const ucontext_t * uc ){
    CLEAN_RES(&res); 
 
    buf = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
-   size  = sizeof(struct epoll_event);
+   events_numbers = (int)uc->uc_mcontext.gregs[REG_ARG2]; 
+   size  = sizeof(struct epoll_event) * events_numbers;
    extra = size; 
-  
+
+   DPRINT(DEBUG_INFO, "Number of events %d\n", events_numbers); 
+
    if (send_syscall_header(uc, extra)< 0)
       die("Send syscall header"); 
   
-   if (send_extra(fd, buf, size) < 0) 
-       die("Failed send extra (Untrudted write)"); 
- 
-     transfered= receive_result_with_extra(fd, &res, buf, size); 
+   transfered= receive_result_with_extra(fd, &res, buf, size); 
    if ( transfered < 0) 
       die("Recvmsg failed result stat"); 
 
@@ -974,6 +975,7 @@ void  trusted_epoll_wait ( int fd, const struct syscall_header * header) {
   struct syscall_result result; 
   struct syscall_request request;
   ssize_t transfered = -1; 
+  size_t size =0;
 
   CLEAN_RES(&result); 
   CLEAN_REQ(&request); 
@@ -984,16 +986,20 @@ void  trusted_epoll_wait ( int fd, const struct syscall_header * header) {
   request.syscall_identifier = header->syscall_num;
 
   memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
-  
+
+  size = header->regs.arg2 * sizeof( struct epoll_event);
+
+  DPRINT(DEBUG_INFO, "Number of events %d\n", header->regs.arg2); 
+
   result.result = do_syscall(&request);
   result.cookie = header->cookie; 
-  result.extra = sizeof (struct epoll_event);
+  result.extra = size;
 
-  transfered = send_result_with_extra(fd, &result, (char *)header->regs.arg1, sizeof(struct epoll_event));  
+  transfered = send_result_with_extra(fd, &result, (char *)header->regs.arg1, size);  
   if ( transfered < 0) 
       die("Recvmsg (Fstat handler)"); 
 
-  CHECK(transfered, sizeof(struct epoll_event) + SIZE_RESULT, result.extra);
+  CHECK(transfered, size + SIZE_RESULT, result.extra);
   TRUSTED_END("EPOLL_WAIT"); 
   
   return; 

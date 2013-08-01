@@ -50,7 +50,7 @@ const struct policy public_policy[] = {
     { __NR_accept,          untrusted_accept,          trusted_accept },  
     { __NR_setsockopt,      untrusted_setsockopt,      DEFAULT_TRUSTED}, 
     { __NR_epoll_ctl,       untrusted_epoll_ctl,       DEFAULT_TRUSTED}, 
-    { __NR_epoll_wait,      untrusted_epoll_wait,      trusted_epoll_wait }, 
+    { __NR_epoll_wait,      DEFAULT_UNTRUSTED,         trusted_epoll_wait }, 
     { __NR_sendfile,        DEFAULT_UNTRUSTED,         trusted_sendfile_pub}, 
 };
 

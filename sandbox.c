@@ -25,6 +25,11 @@ void segv_sig_handler(int signo, siginfo_t *context, void *unused)
     asm("segv_sig_handler") INTERNAL;
 
 
+void alert(int signo, siginfo_t *context, void *unused){
+DPRINT(DEBUG_INFO, "****************************************** SIGNAL ********************************************\n"); 
+}
+
+
 void install_sandbox_configuration(){
 
     char * ip= NULL,  * port = NULL, * visibility= NULL;  
@@ -75,6 +80,13 @@ void setup_signal_handlers() {
 	sigaddset(&mask, SIGSYS);
 	sigaddset(&mask, SIGCHLD);
   sigaddset(&mask, SIGSEGV);
+  sigaddset(&mask, SIGINT);
+  sigaddset(&mask, SIGPIPE);
+  sigaddset(&mask, SIGUSR1);
+  sigaddset(&mask, SIGUSR2);
+  sigaddset(&mask, SIGTERM);
+  sigaddset(&mask, SIGHUP);
+  sigaddset(&mask, SIGALRM);
  
   sa.sa_handler = SIG_DFL;
   sigaction(SIGCHLD, &sa, NULL);
@@ -90,7 +102,43 @@ void setup_signal_handlers() {
   sa.sa_sigaction =  emulator;
   sa.sa_flags      = SA_SIGINFO;
   sigaction(SIGSYS, &sa, NULL);
+
+  // Set up SYS handler for dealing with BPF trap. 
+  sa.sa_sigaction =  alert;
+  sa.sa_flags      = SA_SIGINFO;
+  sigaction(SIGHUP, &sa, NULL);
   
+  // Set up SYS handler for dealing with BPF trap. 
+  sa.sa_sigaction =  alert;
+  sa.sa_flags      = SA_SIGINFO;
+  sigaction(SIGPIPE, &sa, NULL);
+ 
+  // Set up SYS handler for dealing with BPF trap. 
+  sa.sa_sigaction =  alert;
+  sa.sa_flags      = SA_SIGINFO;
+  sigaction(SIGINT, &sa, NULL);
+ 
+  // Set up SYS handler for dealing with BPF trap. 
+  sa.sa_sigaction =  alert;
+  sa.sa_flags      = SA_SIGINFO;
+  sigaction(SIGUSR1, &sa, NULL);
+  
+  // Set up SYS handler for dealing with BPF trap. 
+  sa.sa_sigaction =  alert;
+  sa.sa_flags      = SA_SIGINFO;
+  sigaction(SIGUSR2, &sa, NULL);
+  
+  // Set up SYS handler for dealing with BPF trap. 
+  sa.sa_sigaction =  alert;
+  sa.sa_flags      = SA_SIGINFO;
+  sigaction(SIGTERM, &sa, NULL);
+
+  // Set up SYS handler for dealing with BPF trap. 
+  sa.sa_sigaction =  alert;
+  sa.sa_flags      = SA_SIGINFO;
+  sigaction(SIGALRM, &sa, NULL);
+
+
 	if (sigprocmask(SIG_UNBLOCK, &mask, NULL))
       die("Sigprocmask"); 
 }
