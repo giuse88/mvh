@@ -1432,7 +1432,7 @@ void server_epoll_wait( struct thread_group * ths, const struct syscall_header *
     // translate for the untrusted thread
     for ( int i=0; i< events_numbers; i++){
        int fd =  get_private_fd(ths,event_ptr[i].data.fd,PUBLIC);
-       event_ptr[i].data.fd = (fd>0) ? fd :event_ptr[i].data.fd;
+       event_ptr[i].data.fd = (fd>0) ? fd : 0;
        DPRINT(DEBUG_ALL,"%d ", event_ptr[i].data.fd); 
     }
 
