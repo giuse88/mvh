@@ -16,8 +16,10 @@
 #include <fcntl.h>
 #include <arpa/inet.h> 
 #include <sys/syscall.h>
+#include <sys/sendfile.h>
 #include <sys/epoll.h>
 #include <assert.h> 
+#include <stdlib.h> 
 
 
 
@@ -963,7 +965,7 @@ u64_t untrusted_epoll_wait(const ucontext_t * uc ){
    if ( transfered < 0) 
       die("Recvmsg failed result stat"); 
 
-   assert(res.cookie == cookie);
+   assert((u64_t)res.cookie == cookie);
    CHECK(transfered, size + SIZE_RESULT, res.extra); 
  
    UNTRUSTED_END("EPOLL_WAIT"); 
@@ -989,7 +991,7 @@ void  trusted_epoll_wait ( int fd, const struct syscall_header * header) {
 
   size = header->regs.arg2 * sizeof( struct epoll_event);
 
-  DPRINT(DEBUG_INFO, "Number of events %d\n", header->regs.arg2); 
+  DPRINT(DEBUG_INFO, "Number of events %lu\n", header->regs.arg2); 
 
   result.result = do_syscall(&request);
   result.cookie = header->cookie; 
@@ -1013,7 +1015,7 @@ u64_t untrusted_accept(const ucontext_t * uc ){
    u64_t extra =0;  
    int fd =  get_local_fd();
    u64_t cookie = get_local_tid();
-   ssize_t  transfered = -1; 
+   /*ssize_t  transfered = -1; */
 
    UNTRUSTED_START("ACCEPT");
    CLEAN_RES(&res); 
@@ -1028,11 +1030,9 @@ u64_t untrusted_accept(const ucontext_t * uc ){
    if (send_extra(fd, buf, size) < 0) 
      die("Failed send extra (Untrudted write)"); 
 
-   DPRINT(DEBUG_INFO," FFFF"); 
    if(receive_syscall_result(&res) < 0 )
        die("failede get_syscall_result"); 
-   assert( cookie == res.cookie);
-   DPRINT(DEBUG_INFO," FFFF"); 
+   assert( cookie == (u64_t)res.cookie);
    
    if (res.extra){ 
       char * addr_struct =  (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
@@ -1041,7 +1041,7 @@ u64_t untrusted_accept(const ucontext_t * uc ){
       int recv =-1; 
       if( (recv=read(fd,addr_struct,*len)) < 0 )
         die("Error receiving extra data"); 
-      assert(*len == recv); 
+      assert(*len == (socklen_t)recv); 
       DPRINT(DEBUG_INFO, "--- Received %d extra\n", recv); 
    }  
    UNTRUSTED_END("ACCEPT"); 
@@ -1130,7 +1130,6 @@ void  trusted_sendfile_priv   ( int fd, const struct syscall_header * header) {
 
   struct syscall_result result; 
   ssize_t transfered =-1; 
-  char * buf = NULL; 
   int source_fd =-1; 
 
   CLEAN_RES(&result); 
@@ -1142,7 +1141,7 @@ void  trusted_sendfile_priv   ( int fd, const struct syscall_header * header) {
   source_fd = header->regs.arg1; 
   DPRINT(DEBUG_INFO, ">>> The source fd id %d\n", source_fd);
   
-  if ((transfered =sendfile(fd, source_fd, header->regs.arg2,header->regs.arg3)) < 0)
+  if ((transfered =sendfile(fd, source_fd, (off_t *)header->regs.arg2,header->regs.arg3)) < 0)
       die("sendfile");
 
   assert( (size_t)transfered == header->regs.arg3); 
@@ -1163,6 +1162,9 @@ void  trusted_sendfile_pub   ( int fd, const struct syscall_header * header) {
   struct syscall_result result; 
   ssize_t transfered =-1; 
   int dest_fd =-1; 
+  size_t size = header->regs.arg3; 
+  char * buf= malloc(size); 
+
 
   CLEAN_RES(&result); 
 
@@ -1170,29 +1172,33 @@ void  trusted_sendfile_pub   ( int fd, const struct syscall_header * header) {
   
   assert(header->syscall_num == __NR_sendfile); 
   
-  dest_fd = header->regs.arg0; 
+  dest_fd = header->regs.arg0;
+
   DPRINT(DEBUG_INFO, ">>> The destination fd id %d\n", dest_fd);
- 
-  size_t size = header->regs.arg3; 
-  char * buf= malloc(size); 
+  DPRINT(DEBUG_INFO, "sendfile(%ld, %ld,  %lx, %ld)\n", header->regs.arg0,  header->regs.arg1, header->regs.arg2, header->regs.arg3); 
 
   if ((transfered = receive_extra(fd, buf, size)) < 0)
       die("sendfile");
+  
   assert( (size_t)transfered == header->regs.arg3); 
-
-  if ( (transfered = write(dest_fd, buf, size)) < 0) 
+  DPRINT(DEBUG_INFO, ">>> File recieved correctly :  %ld\n", transfered);
+ 
+  transfered = send_extra(dest_fd, buf, size); 
+  
+  if (transfered  < 0) 
       die("write sendfile");
 
   assert( (size_t)transfered == header->regs.arg3); 
+  DPRINT(DEBUG_INFO, ">>> File sent correcltly  %ld\n", transfered);
   
-  result.extra = transfered; 
   result.extra = transfered; 
   result.cookie = header->cookie; 
  
   send_syscall_result(fd, &result); 
 
-  TRUSTED_END("SENDFILE"); 
+  free(buf); 
 
+  TRUSTED_END("SENDFILE"); 
   return; 
 }
 

@@ -51,11 +51,11 @@ int save_fd(struct thread_group * ths, int fd, fd_type type, process_visibility 
       return 0; 
     }
 
-    static int counter = 10; 
+    static int long  counter = 100; 
     int index = get_free_fd(ths);
     static const char *type_name [] =  {"EMPY", "FILE_FD", "SOCKET_FD", "POLL_FD"}; 
     srand(time(NULL)); 
-    *fake_fd = (rand() + ++counter) % 1000;
+    *fake_fd = counter++;
 
     if ( index < 0 )
       return -1;
@@ -1160,7 +1160,7 @@ void server_fcntl( struct thread_group * ths, const struct syscall_header * publ
 
     fd_match = ((public->regs.arg0 == private->regs.arg0 && IS_STD_FD(public->regs.arg0)) || get_fd_info(ths, public->regs.arg0, private->regs.arg0, &pair)); 
    
-   printf(" %d %d\n", public->regs.arg0, private->regs.arg0 ); 
+   /*printf(" %d %d\n", public->regs.arg0, private->regs.arg0 ); */
 
     if ( fd_match && 
          (public->regs.arg1 == private->regs.arg1) &&
@@ -1177,8 +1177,8 @@ void server_fcntl( struct thread_group * ths, const struct syscall_header * publ
       execution_private_variant(ths,private, &result);  
     }
 
-    printf("[ public  ] fcntl(%ld, %lx, %lx) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); 
-    printf("[ private ] fcntl(%ld, %lx, %lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
+    printf("[ PUBLIC  ] fcntl(%ld, %lx, %lx) = %ld\n", public->regs.arg0,  public->regs.arg1, private->regs.arg2, result.result); 
+    printf("[ PRIVATE ] fcntl(%ld, %lx, %lx) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2, result.result); 
 
     return; 
 }
@@ -1351,13 +1351,16 @@ void server_epoll_ctl( struct thread_group * ths, const struct syscall_header * 
     struct epoll_event private_event, public_event; 
     bool buffer_match;
     struct fd_info pair, sock_pair; 
+    int private_fd =-1; 
 
     assert(public->syscall_num == private->syscall_num); 
 
     get_extra_arguments(ths->fds[PUBLIC_UNTRUSTED], (char *)&public_event, ths->fds[PRIVATE_UNTRUSTED],
                         (char *)&private_event, sizeof(struct epoll_event)); 
-    
-    buffer_match  = (public_event.data.fd  == get_public_fd(ths,private_event.data.fd, PUBLIC)) &&  
+  
+    private_fd =  get_public_fd(ths,private_event.data.fd, PUBLIC);  
+
+    buffer_match  = (public_event.data.fd  == ((private_fd > 0) ? private_fd : 0)) &&  
                     (public_event.events  == private_event.events );  
     
     printf("Public %d, Private fake: %d computed : %d\n",
@@ -1385,7 +1388,6 @@ void server_epoll_ctl( struct thread_group * ths, const struct syscall_header * 
 void server_epoll_wait( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
 
     struct syscall_result result; 
-    bool buffer_match; 
     struct fd_info pair; 
     int events_numbers = 0; 
     char * events=NULL; 
@@ -1416,34 +1418,25 @@ void server_epoll_wait( struct thread_group * ths, const struct syscall_header *
        die("Error receiving result from the truste thread");
 
  
-   // I need to check the result 
-   //we can send the buffer only if there somthing
+   /*DPRINT(DEBUG_INFO, "Received events buffers public");*/
 
- 
-
-   DPRINT(DEBUG_INFO, "Received events buffers public");
-
-   struct epoll_event * event_ptr = events;
+   struct epoll_event * event_ptr = (struct epoll_event *)events;
    
-   for ( int i=0; i< events_numbers; i++) 
-       DPRINT(DEBUG_ALL,"%d ", event_ptr[i].data.fd); 
+ /*  for ( int i=0; i< events_numbers; i++) */
+       /*DPRINT(DEBUG_ALL,"%d ", event_ptr[i].data.fd); */
 
-    puts(""); 
     // translate for the untrusted thread
     for ( int i=0; i< events_numbers; i++){
        int fd =  get_private_fd(ths,event_ptr[i].data.fd,PUBLIC);
        event_ptr[i].data.fd = (fd>0) ? fd : 0;
-       DPRINT(DEBUG_ALL,"%d ", event_ptr[i].data.fd); 
+       /*DPRINT(DEBUG_ALL,"%d ", event_ptr[i].data.fd); */
     }
 
-    puts(""); 
    result.cookie = private->cookie;
    if((transfered=send_result_with_extra(ths->fds[PRIVATE_UNTRUSTED], &result, events, size )) < 0)
         die("Failed sending result (READ)"); 
  
    CHECK(transfered, size + SIZE_RESULT, result.extra);  
-
-  /*getchar(); */
 
   result.cookie = public->cookie;
   result.extra  = 0;
@@ -1453,9 +1446,9 @@ void server_epoll_wait( struct thread_group * ths, const struct syscall_header *
 
   CHECK(transfered, size + SIZE_RESULT, result.extra);  
   
-  printf("[ public  ] epoll_wait(%ld, 0x%lx, %ld, %ld) = %ld\n", public->regs.arg0, public->regs.arg1,
+  printf("[ PUBLIC  ] epoll_wait(%ld, 0x%lx, %ld, %ld) = %ld\n", public->regs.arg0, public->regs.arg1,
                                                     public->regs.arg2,  public->regs.arg3, result.result); 
-  printf("[ private ] epoll_wait(%ld, 0x%lx, %ld, %ld) = %ld\n", private->regs.arg0, private->regs.arg1 ,
+  printf("[ PRIVATE ] epoll_wait(%ld, 0x%lx, %ld, %ld) = %ld\n", private->regs.arg0, private->regs.arg1 ,
                                                     private->regs.arg2, private->regs.arg3, result.result); 
   return; 
 }
@@ -1693,8 +1686,6 @@ void server_sendfile( struct thread_group * ths, const struct syscall_header * p
 
     if ( out_pair.visibility == PUBLIC)  {
 
-        off_t off; 
-
         if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
             die("Failed send request to trusted thread");
       
@@ -1704,17 +1695,24 @@ void server_sendfile( struct thread_group * ths, const struct syscall_header * p
         if((transfered = receive_extra(ths->fds[PRIVATE_TRUSTED], buffer, size)) < 0)
             die("Failed receive result trusted thread");
 
-        assert( transfered == size); 
-        
+        assert( (size_t)transfered == size); 
+
+
         if(receive_syscall_result(ths->fds[PRIVATE_TRUSTED], &private_result) < 0)
           die("Receiving result"); 
 
-        if((transfered = send_extra(ths->fds[PUBLIC_TRUSTED], buffer, size)) < 0)
+       DPRINT(DEBUG_INFO, "Received file from the private variant\n"); 
+       
+       if((transfered = send_extra(ths->fds[PUBLIC_TRUSTED], buffer, size)) < 0)
             die("Failed receive result trusted thread");
 
-        assert( transfered == size); 
+       DPRINT(DEBUG_INFO, "Sent file %ld over %lu \n", transfered, size); 
+      
+       assert( (size_t)transfered == size); 
         
-        if(receive_syscall_result(ths->fds[PUBLIC_TRUSTED], &public_result) < 0)
+       DPRINT(DEBUG_INFO, "Sent file to the public variant\n"); 
+       
+       if(receive_syscall_result(ths->fds[PUBLIC_TRUSTED], &public_result) < 0)
           die("Receiving result"); 
 
         if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], &public_result) < 0)
@@ -1735,8 +1733,6 @@ void server_sendfile( struct thread_group * ths, const struct syscall_header * p
     free(buffer); 
     return; 
 } 
-
-
 
 /************** INSTALL SERVER HANDLER *****************************/ 
 void initialize_server_handler() { 

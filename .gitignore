@@ -23,3 +23,5 @@ mvh_server
 tags
 .*
 *.txt
+divergence
+out
