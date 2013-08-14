@@ -64,8 +64,12 @@ void handle_connection(int sockfd, struct sockaddr_in *client_addr_ptr) {
    memset(resource, 0,  REQUEST); 
    length = recv_line(sockfd, request);
 
-   printf("Got request from %s:%d lenght:%d, [ %s ] \n", inet_ntoa(client_addr_ptr->sin_addr), ntohs(client_addr_ptr->sin_port),length, request);
-
+   printf("Got request from %s:%d lenght: %d  \n", inet_ntoa(client_addr_ptr->sin_addr), ntohs(client_addr_ptr->sin_port),length);
+   puts("--------------------------------\n"); 
+   printf("%s", request);
+   puts("--------------------------------"); 
+   
+   
    ptr = strstr(request, " HTTP/"); // search for valid looking request
    if(ptr == NULL) { // then this isn't valid HTTP
       printf(" NOT HTTP!\n");

@@ -36,7 +36,7 @@ int recv_line(int sockfd, unsigned char *dest_buffer) {
    memset(temp_buf, 0, SIZE_BUFFER); 
    n_read= read(sockfd, temp_buf, SIZE_BUFFER); 
 
-   printf("Read %ld\n", n_read); 
+   //printf("Read %ld\n", n_read); 
 
    for (i=0; i < n_read && i < SIZE_BUFFER; i++, ptr++)
      *ptr=temp_buf[i]; 

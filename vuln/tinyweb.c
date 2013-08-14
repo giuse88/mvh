@@ -7,13 +7,19 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "hacking.h"
-#include "hacking-network.h"
 
-#define PORT 80   // the port users will be connecting to
-#define WEBROOT "/var/www/localhost/htdocs/"  // the web server's root directory
+#define PORT                 80  
+#define WEBROOT              "/var/www/localhost/htdocs/"  
+#define REQUEST              1000
+#define SIZE_BUFFER          1000  
 
-void handle_connection(int, struct sockaddr_in *); // handle web requests
-int get_file_size(int); // returns the filesize of open file descriptor
+
+int recv_line(int sockfd, unsigned char *dest_buffer); 
+int send_string(int sockfd, unsigned char *buffer); 
+void handle_connection(int, struct sockaddr_in *); 
+int get_file_size(int); 
+
+
 
 int main(void) {
    int sockfd, new_sockfd, yes=1; 
@@ -55,20 +61,20 @@ int main(void) {
  * and this function replies over the connected socket.  Finally, the 
  * passed socket is closed at the end of the function.
  */
-#define REQUEST 500
 void handle_connection(int sockfd, struct sockaddr_in *client_addr_ptr) {
    unsigned char *ptr, request[REQUEST], resource[REQUEST];
    int fd, length;
 
-//   length = recv_line(sockfd, request);
    memset(request, 0,  REQUEST); 
-   length = read(sockfd, request,REQUEST); 
+   memset(resource, 0,  REQUEST); 
+   length = recv_line(sockfd, request);
 
-   printf("Got request from %s:%d \n", inet_ntoa(client_addr_ptr->sin_addr), ntohs(client_addr_ptr->sin_port), request);
-   puts("--------------------------------------"); 
-   printf("%s\n", request);  
-   puts("--------------------------------------"); 
-
+   printf("Got request from %s:%d lenght: %d  \n", inet_ntoa(client_addr_ptr->sin_addr), ntohs(client_addr_ptr->sin_port),length);
+   puts("--------------------------------\n"); 
+   printf("%s", request);
+   puts("--------------------------------"); 
+   
+   
    ptr = strstr(request, " HTTP/"); // search for valid looking request
    if(ptr == NULL) { // then this isn't valid HTTP
       printf(" NOT HTTP!\n");
@@ -126,3 +132,44 @@ int get_file_size(int fd) {
       return -1;
    return (int) stat_struct.st_size;
 }
+
+/* This function accepts a socket FD and a ptr to the null terminated
+ * string to send.  The function will make sure all the bytes of the
+ * string are sent.  Returns 1 on success and 0 on failure.
+ */
+int send_string(int sockfd, unsigned char *buffer) {
+   int sent_bytes, bytes_to_send;
+   bytes_to_send = strlen(buffer); 
+   while(bytes_to_send > 0) {
+      sent_bytes = write(sockfd, buffer, bytes_to_send);
+      if(sent_bytes == -1)
+         return 0; // return 0 on send error
+      bytes_to_send -= sent_bytes;
+      buffer += sent_bytes;
+   }
+   return 1; // return 1 on success
+}
+
+/* This function accepts a socket FD and a ptr to a destination
+ * buffer.  It will receive from the socket until the EOL byte
+ * sequence in seen.  The EOL bytes are read from the socket, but
+ * the destination buffer is terminated before these bytes.
+ * Returns the size of the read line (without EOL bytes).
+ */
+int recv_line(int sockfd, unsigned char *dest_buffer) {
+   unsigned char temp_buf[SIZE_BUFFER], *ptr, *ptr_dest_buffer;
+   int eol_matched = 0;
+   int i=0; 
+   ssize_t n_read; 
+
+   ptr = dest_buffer;
+  
+   memset(temp_buf, 0, SIZE_BUFFER); 
+   n_read= read(sockfd, temp_buf, SIZE_BUFFER); 
+
+   for (i=0; i < n_read && i < SIZE_BUFFER; i++, ptr++)
+     *ptr=temp_buf[i]; 
+
+   return i;  //didn't find the end of line characters
+}
+
