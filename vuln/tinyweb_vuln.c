@@ -66,7 +66,7 @@ void handle_connection(int sockfd, struct sockaddr_in *client_addr_ptr) {
 
    printf("Got request from %s:%d lenght: %d  \n", inet_ntoa(client_addr_ptr->sin_addr), ntohs(client_addr_ptr->sin_port),length);
    puts("--------------------------------\n"); 
-   printf("%s", request);
+   printf("%.*s", 500, request);
    puts("--------------------------------"); 
    
    

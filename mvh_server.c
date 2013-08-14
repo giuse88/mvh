@@ -84,6 +84,37 @@ void print_thread_group(const struct thread_group * group){
 }
 /********************************************/ 
 
+void attack_dectected( const struct thread_group * ths, const struct syscall_header *public, const struct syscall_header *private ) {
+
+    const struct syscall_header * head = NULL;
+    const struct syscall_registers *reg =NULL; 
+
+    puts( ANSI_COLOR_RED"\tDectected an ongoing attack over the public variant"ANSI_COLOR_RESET); 
+
+    head = public;
+    reg= &public->regs; 
+    printf ("System call invoked by the public variant : %-20s\n %-20lx%-20lx%-20lx%-20lx%-20lx%-20lx \n", 
+             syscall_names[head->syscall_num], 
+             reg->arg0,  reg->arg1,reg->arg2, reg->arg3,  reg->arg4, reg->arg5);
+    head = private;
+    reg=  &private->regs; 
+
+    printf ("System call invoked by the private variant : %-20s\n %-20lx%-20lx%-20lx%-20lx%-20lx%-20lx \n", 
+             syscall_names[head->syscall_num], 
+             reg->arg0,  reg->arg1,reg->arg2, reg->arg3,  reg->arg4, reg->arg5);
+
+   puts("\nSecurity process started");
+
+   printf(">>>>> Closing connections with the variants..."); 
+   for (int i=0; i< NFDS; i++)
+      close(ths->fds[i]); 
+   puts("DONE"); 
+
+   puts("Security Process terminated\nExit"); 
+   exit(0); 
+}
+
+
 int make_socket_non_blocking (int sfd){
   int flags, s;
 
@@ -189,10 +220,13 @@ void  * handle_thread_pair(void * arg) {
         
         DPRINT(DEBUG_INFO, "Received an header pair\n");
        // we must call the handler 
-        assert( private_header.syscall_num ==  public_header.syscall_num);
+        if ( private_header.syscall_num ==  public_header.syscall_num) {
         int syscall_num = private_header.syscall_num; 
         syscall_table_server_[syscall_num].handler(ths, &public_header, &private_header); 
-    
+        } else {
+          attack_dectected(ths, &public_header, &private_header); 
+        }
+
         CLEAN_HEA(&public_header);
         CLEAN_HEA(&private_header);
         pub_req    =false; 
