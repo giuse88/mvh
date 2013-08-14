@@ -41,6 +41,7 @@ const struct policy public_policy[] = {
     { __NR_ioctl,           untrusted_ioctl,           trusted_ioctl  }, 
     //{ __NR_munmap,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED}, 
     { __NR_getpid,          DEFAULT_UNTRUSTED,         NO_HANDLER     }, 
+    { __NR_gettid,          DEFAULT_UNTRUSTED,         NO_HANDLER     }, 
     { __NR_getcwd,          untrusted_getcwd,          DEFAULT_TRUSTED}, 
     { __NR_getuid,          DEFAULT_UNTRUSTED,         NO_HANDLER     }, 
     { __NR_fcntl,           DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
@@ -52,6 +53,7 @@ const struct policy public_policy[] = {
     { __NR_epoll_ctl,       untrusted_epoll_ctl,       DEFAULT_TRUSTED}, 
     { __NR_epoll_wait,      DEFAULT_UNTRUSTED,         trusted_epoll_wait }, 
     { __NR_sendfile,        DEFAULT_UNTRUSTED,         trusted_sendfile_pub}, 
+    { __NR_clone,           untrusted_clone,            trusted_clone}, 
 };
 
 //PRIVATE APPLICATION
@@ -75,6 +77,7 @@ const struct policy private_policy[] = {
     { __NR_ioctl,           untrusted_ioctl,            trusted_ioctl  }, 
     //{ __NR_munmap,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
     { __NR_getpid,          DEFAULT_UNTRUSTED,          NO_HANDLER     }, 
+    { __NR_gettid,          DEFAULT_UNTRUSTED,         NO_HANDLER     }, 
     { __NR_getcwd,          DEFAULT_UNTRUSTED,         trusted_getcwd  }, 
     { __NR_getuid,          DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED },
     { __NR_fcntl,           DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED },
@@ -86,6 +89,7 @@ const struct policy private_policy[] = {
     { __NR_epoll_ctl,       untrusted_epoll_ctl,       NO_HANDLER      }, 
     { __NR_epoll_wait,      untrusted_epoll_wait,      NO_HANDLER      }, 
     { __NR_sendfile,        DEFAULT_UNTRUSTED,         trusted_sendfile_priv }, 
+    { __NR_clone,           untrusted_clone,            trusted_clone}, 
 };
  
 #endif /* end of include guard: POLICY_H */

@@ -29,7 +29,6 @@ void alert(int signo, siginfo_t *context, void *unused){
 DPRINT(DEBUG_INFO, "****************************************** SIGNAL ********************************************\n"); 
 }
 
-
 void install_sandbox_configuration(){
 
     char * ip= NULL,  * port = NULL, * visibility= NULL;  
@@ -142,22 +141,6 @@ void setup_signal_handlers() {
 	if (sigprocmask(SIG_UNBLOCK, &mask, NULL))
       die("Sigprocmask"); 
 }
-void wait_for_remote_process() {
-    int fd = get_local_fd(); 
-    char buf[COMMAND]; 
-    int res =-1; 
-
-    memset(buf, 0, COMMAND);
-
-    DPRINT(DEBUG_INFO, "Wait for the remote process, fd %d\n", fd);
-
-    INTR_RES(read(fd, buf,COMMAND), res); 
-
-    if (strncmp(buf, START_COMMAND, sizeof(START_COMMAND)) || res < COMMAND) 
-          die("Wait for the remote process");       
-
-    DPRINT(DEBUG_INFO, "Process syncronised with the remote process\n"); 
-}
 
 void close_file_descriptors() {
 
@@ -220,7 +203,6 @@ int start_sandbox() {
         die("Create trusted thread");
 
     sandbox.status = ENABLE;
-    wait_for_remote_process(); 
     DPRINT(DEBUG_INFO, "Ends Sandbox\n");
 
     return 0; 

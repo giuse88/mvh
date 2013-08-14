@@ -276,7 +276,7 @@ void handle_connection(int sockfd){
     static struct thread_group * ths = NULL;
 
     // get information about the untrusted process; 
-    INTR_RES(read(sockfd, (char *)&info, sizeof(info)), bytes_transfered); 
+    bytes_transfered=read(sockfd, (char *)&info, sizeof(info)); 
 
     if (bytes_transfered < (int)sizeof(info))
         die("Read (thread info)"); 
@@ -285,7 +285,7 @@ void handle_connection(int sockfd){
 
     strncpy(buf, ACCEPTED, sizeof(ACCEPTED));
     // send acknowledge 
-    INTR_RES(write(sockfd, buf, ACKNOWLEDGE), bytes_transfered); 
+    bytes_transfered=write(sockfd, buf, ACKNOWLEDGE); 
 
     if (bytes_transfered != ACKNOWLEDGE)
         die("Read (waiting for acknowledge)"); 
@@ -293,7 +293,7 @@ void handle_connection(int sockfd){
     if (first) {
           first = false;
           ths = malloc(sizeof (struct thread_group));    
-          RESET(ths, sizeof ( struct thread_group)); 
+          RESET(ths, struct thread_group);  
           DPRINT(DEBUG_INFO, "Thread group information allocated at the position %p\n", ths); 
     }
 
@@ -302,9 +302,9 @@ void handle_connection(int sockfd){
     // all threads are connected 
   if ( ths->public.trusted_fd   && ths->public.untrusted_fd && 
        ths->private.trusted_fd  && ths->private.untrusted_fd){
-       pthread_create(&tid, NULL, handle_thread_pair, (void*)ths); 
-      
-      first= false;
+      DPRINT(DEBUG_INFO, "Create new monitor thread \n"); 
+      pthread_create(&tid, NULL, handle_thread_pair, (void*)ths); 
+      first= true;
       // this memory is relesed by the EXIT SYSTEM CALL 
       ths = NULL; 
   }
@@ -330,8 +330,7 @@ void  run_mvh_server(int port) {
     /* Enable address reuse */
     int on = 1;
     if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0)
-        die("SetSockOpt"); 
-    
+        die("SetSockOpt");   
     
     if (bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0 )
         die("Bind"); 

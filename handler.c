@@ -20,6 +20,7 @@
 #include <sys/epoll.h>
 #include <assert.h> 
 #include <stdlib.h> 
+#include <sched.h> 
 
 
 
@@ -43,6 +44,8 @@ int receive_syscall_result (struct syscall_result * res){
     pid_t tid = get_local_tid(); 
 
     INTR_RES(read(fd, (char *)res, SIZE_RESULT), received); 
+
+    DPRINT(DEBUG_INFO, "TID %d, FD %d received %lu %lu\n", tid, fd,res->cookie , res->result);
 
     if (res->cookie != tid || received != SIZE_RESULT)
         die("cookie verification failed (result)"); 
@@ -1202,48 +1205,108 @@ void  trusted_sendfile_pub   ( int fd, const struct syscall_header * header) {
   return; 
 }
 
+u64_t untrusted_clone ( const ucontext_t * context) {
 
-/*[> CLONE <] */
-/*u64_t clone_untrusted ( const ucontext_t * context) {*/
+   
+   char *stack = (char *)context->uc_mcontext.gregs[REG_ARG1]; 
+   char *child_stack=stack; 
+   void *dummy;
+   struct syscall_result result; 
+   struct syscall_header header; 
+   ssize_t transfered=-1; 
 
-/*   DPRINT(DEBUG_INFO, " --CLONE-- System call handler\n"); char *stack = (char *)req->arg1; */
-   /*char *child_stack=stack; */
-   /*void *dummy;*/
-   /*asm volatile( "mov %%rsp, %%rcx\n"*/
-                 /*"mov %3, %%rsp\n"*/
-                 /*"int $0\n"*/
-                 /*"mov %%rcx, %%rsp\n"*/
-                 /*: "=a"(stack), "=&c"(dummy)*/
-                 /*: "a"(__NR_clone + 0xF000), "m"(stack)*/
-                 /*: "memory");*/
+   CLEAN_HEA(&header); 
+   CLEAN_RES(&result); 
+
+   UNTRUSTED_START("CLONE");  
+   
+   asm volatile( "mov %%rsp, %%rcx\n"
+                 "mov %3, %%rsp\n"
+                 "int $0\n"
+                 "mov %%rcx, %%rsp\n"
+                 : "=a"(stack), "=&c"(dummy)
+                 : "a"(__NR_clone + 0xF000), "m"(stack)
+                 : "memory");
  
-   /*req->arg1=(long)stack;*/
-   /*ucontext_t * uc = (struct ucontext *)stack;*/
+   
+    header.syscall_num = __NR_clone; 
+    header.address = context->uc_mcontext.gregs[REG_PC]; 
+    header.cookie  = get_local_tid(); 
+    header.extra   = 0; 
+    set_reg(&(header.regs), context);
+    header.regs.arg1=(long)stack;
+
+   // Setting up the context of the new thread 
+   ucontext_t * uc = (struct ucontext *)stack;
     /*copy state and signal mask of the untrusted process */
-   /*memcpy(uc, context, sizeof(struct ucontext)); */
-   /*uc->uc_mcontext.gregs[REG_RESULT]=0; */
-   /*uc->uc_mcontext.gregs[REG_RSP]=(long)child_stack; */
-/*}*/
-/*void clone_trusted ( const syscall_request * request, int fd) {*/
-  /*[>   if ( request.syscall_identifier == __NR_clone ) {<]*/
-      /*[>long clone_flags = (long)   request.arg0; <]*/
-      /*[>char *stack      = (char *) request.arg1;<]*/
-      /*[>int  *pid_ptr    = (int *)  request.arg2;<]*/
-      /*[>int  *tid_ptr    = (int *)  request.arg3;<]*/
-      /*[>void *tls_info   = (void *) request.arg4;<]*/
-     
-      /*[>request_result.result=clone(handle_new_thread,<]*/
-                                    /*[>allocate_stack(STACK_SIZE), clone_flags,<]*/
-                                    /*[>(void *)stack,pid_ptr, tls_info, tid_ptr); <]*/
+   memcpy(uc, context, sizeof(struct ucontext)); 
+   uc->uc_mcontext.gregs[REG_RESULT]=0; 
+   uc->uc_mcontext.gregs[REG_RSP]=(long)child_stack;
+  
+   if ((transfered=write(get_local_fd(), &header, SIZE_HEADER)) < 0)
+      die("Error sending header system call CLONE"); 
+   
+   assert( SIZE_HEADER == (size_t)transfered); 
 
-    /*[>} else {<]*/
-      /*[>request_result.result = DoSyscall(&request);<]*/
-    /*[>}<]*/
-      /*[>request_result.cookie = request.cookie; <]*/
+   if(receive_syscall_result(&result) < 0 )
+       die("Failede get_syscall_result"); 
 
-    /*[>[>INTR_RES(write(local_info.fd_remote_process,(char *)&request_result,sizeof(request_result))<], nwrite); <]*/
+   assert((u64_t)result.cookie == get_local_tid()); 
 
-/*}*/
+   UNTRUSTED_END("CLONE"); 
+   return (u64_t)result.result; 
+
+}
+
+static void return_from_clone_syscall(void *stack) {
+
+struct ucontext * uc =  (struct ucontext * ) stack; 
+ DPRINT(DEBUG_INFO, "Clone handler, installed new stack frame at %p, RIP = 0x%lx\n", stack, (long) uc->uc_mcontext.gregs[REG_RIP]); 
+ asm volatile ( "mov %0, %%rsp\n"
+                "mov $15, %%rax\n"
+                "syscall\n"
+                : 
+                : "m"(stack) 
+                : "memory"
+              ); 
+}
+
+static int handle_new_thread( void * stack) {
+ DPRINT(DEBUG_INFO, "Handle new thread\n"); 
+ create_trusted_thread(); 
+ DPRINT(DEBUG_INFO, "Stack pointer %p \n", stack); 
+ return_from_clone_syscall(stack);
+ return 0; 
+}
+
+void trusted_clone(int fd, const struct syscall_header * header) {
+
+  long clone_flags = (long)   header->regs.arg0; 
+  char *stack      = (char *) header->regs.arg1;
+  int  *pid_ptr    = (int  *) header->regs.arg2;
+  int  *tid_ptr    = (int  *) header->regs.arg3;
+  void *tls_info   = (void *) header->regs.arg4;
+  struct syscall_result result; 
+
+  TRUSTED_START("CLONE"); 
+
+  result.result=clone(handle_new_thread,
+                                    allocate_stack(STACK_SIZE), clone_flags,
+                                    (void *)stack,pid_ptr, tls_info, tid_ptr); 
+
+  result.cookie = header->cookie; 
+  result.extra = 0; 
+
+  if( send_syscall_result(fd, &result) < 0) 
+    die("Error sending result clone system call"); 
+
+  TRUSTED_END("CLONE"); 
+
+}
+
+
+
+
 
 /*[> EXIT <] */
 /*u64_t exit_untrusted ( const ucontext_t context) {*/
@@ -1267,24 +1330,3 @@ void  trusted_sendfile_pub   ( int fd, const struct syscall_header * header) {
 
     /*[>INTR_RES(write(local_info.fd_remote_process,(char *)&request_result,sizeof(request_result)), nwrite); <]*/
 /*}*/
-
-/*
-void sys_write (syscall_request * req , const ucontext_t * context )
-{
-   req->has_indirect_arguments=true; 
-   req->indirect_arguments=1;
-   req->args[0].content= (char *)req->arg1; 
-   req->args[0].size = req->arg2 ; 
-   req->args[0].argument_number = 1;
-}
-
-void sys_read (syscall_request * req, const ucontext_t * context ){
-   [>open ( char * "path", mode ) <] 
- //  DPRINT(DEBUG_INFO, " --READ-- System call handler\n");
-   req->has_indirect_arguments=true; 
-   req->indirect_arguments=1;
-   req->args[0].content= (char *)req->arg1; 
-   req->args[0].size = req->arg2 ; 
-   req->args[0].argument_number = 1;
-}
-*/ 

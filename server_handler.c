@@ -655,7 +655,9 @@ void server_mmap ( struct thread_group* ths, const struct syscall_header * publi
   // send the result header to the trusted thread 
   if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], &private_result) < 0)
         die("Failed forwarding result to the private thread\n"); 
- 
+
+
+
   printf("[ PUBLIC  ] mmap(%ld, %ld, 0x%lx, 0x%lx, %ld, %ld) = 0x%lX\n", public->regs.arg0, public->regs.arg1,
                                                                    public->regs.arg2, public->regs.arg3,
                                                                    public->regs.arg4, public->regs.arg5,
@@ -1038,7 +1040,7 @@ void server_getpid( struct thread_group * ths, const struct syscall_header * pub
     private_result.cookie = private->cookie; 
     private_result.extra = 0; 
    
-    public_result.result = ths->private.untrusted.pid; 
+    public_result.result = ths->public.untrusted.pid; 
     public_result.cookie = public->cookie; 
     public_result.extra = 0; 
   
@@ -1050,6 +1052,44 @@ void server_getpid( struct thread_group * ths, const struct syscall_header * pub
 
     printf("[ PUBLIC  ] getpid() = %ld\n", public_result.result); 
     printf("[ PRIVATE ] getpid() = %ld\n", private_result.result); 
+
+    return; 
+}
+
+void server_gettid( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
+
+ 
+    struct syscall_result private_result, public_result; 
+    
+    CLEAN_RES(&private_result); 
+    CLEAN_RES(&public_result);
+
+    if (private->syscall_num ==  __NR_gettid && public->syscall_num == __NR_gettid )
+        SYSCALL_VERIFIED("GETTID"); 
+    else 
+        SYSCALL_NO_VERIFIED("GETTID"); 
+
+
+    private_result.result = ths->private.untrusted.tid; 
+    private_result.cookie = private->cookie; 
+    private_result.extra = 0; 
+   
+    public_result.result =  ths->public.untrusted.tid; 
+    public_result.cookie =  public->cookie; 
+    public_result.extra = 0; 
+  
+  
+    printf("%d %d", public->cookie, private->cookie); 
+    printf("%d %d", ths->fds[PRIVATE_UNTRUSTED], ths->fds[PUBLIC_UNTRUSTED]); 
+  
+    if(write(ths->fds[PRIVATE_UNTRUSTED], &private_result, sizeof(private_result)) < 0)
+        die("Failed send request private untrusted thread");
+
+    if(write(ths->fds[PUBLIC_UNTRUSTED], &public_result, sizeof(public_result)) < 0)
+        die("Failed send request public untrusted thread");
+
+    printf("[ PUBLIC  ] gettid() = %ld\n", public_result.result); 
+    printf("[ PRIVATE ] gettid() = %ld\n", private_result.result); 
 
     return; 
 }
@@ -1724,10 +1764,10 @@ void server_sendfile( struct thread_group * ths, const struct syscall_header * p
     } else 
           irreversible_error("Not Implemented yet"); 
     
-    printf("[ PUBLIC  ] write(%ld, %ld,  %lx, %ld) = %ld\n", public->regs.arg0,  public->regs.arg1, public->regs.arg2, 
+    printf("[ PUBLIC  ] sendfile(%ld, %ld,  %lx, %ld) = %ld\n", public->regs.arg0,  public->regs.arg1, public->regs.arg2, 
                                                              public->regs.arg3,  public_result.result); 
     
-    printf("[ PRIVATE ] write(%ld, %ld,  %lx, %ld) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2,
+    printf("[ PRIVATE ] sendfile(%ld, %ld,  %lx, %ld) = %ld\n", private->regs.arg0, private->regs.arg1, private->regs.arg2,
                                                              private->regs.arg3, private_result.result); 
 
     free(buffer); 
@@ -1758,6 +1798,7 @@ void initialize_server_handler() {
       { __NR_rt_sigaction,   server_sigaction  }, 
       { __NR_fcntl ,         server_fcntl      }, 
       { __NR_getpid,         server_getpid     }, 
+      { __NR_gettid,         server_gettid     }, 
       { __NR_getcwd,         server_getcwd     }, 
       { __NR_getuid,         server_getuid     }, 
       { __NR_socket,         server_socket     }, 

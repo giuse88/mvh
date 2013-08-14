@@ -26,6 +26,7 @@
 #endif
 
 #define RESET(x,y) memset(x, 0, sizeof(y))
+#define RESET_2(x,y) memset(x, 0, y)
 
 typedef unsigned long u64_t; 
 extern char * syscall_names []; 

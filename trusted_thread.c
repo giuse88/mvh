@@ -28,8 +28,6 @@ extern char * syscall_names[];
 
 #define   _GNU_SOURCE  1
 
-#define STACK_SIZE 0x8000
-
 // Semaphore to syncronize two thread
 static sem_t binary_semaphore; 
 
@@ -99,29 +97,22 @@ int    connect_remote_process(struct connection_info * , thread_type , int );
 void   print_thread_info(const struct thread_info * info);
 /*void   print_syscall_info(const syscall_request * req); */
 
+void wait_for_remote_process() {
+    int fd = get_local_fd(); 
+    char buf[COMMAND]; 
+    int res =-1; 
 
-/* CLONE 
- * static void return_from_clone_syscall(void *stack) {*/
+    memset(buf, 0, COMMAND);
 
- /*struct ucontext * uc =  (struct ucontext * ) stack; */
- /*DPRINT(DEBUG_INFO, "Clone handler, installed new stack frame at %p, RIP = 0x%lx\n", stack, (long) uc->uc_mcontext.gregs[REG_RIP]); */
- /*asm volatile ( "mov %0, %%rsp\n"*/
-                /*"mov $15, %%rax\n"*/
-                /*"syscall\n"*/
-                /*: */
-                /*: "m"(stack) */
-                /*: "memory"*/
-              /*); */
-/*}*/
+    DPRINT(DEBUG_INFO, "Wait for the remote process, fd %d\n", fd);
 
-/*static int handle_new_thread( void * stack) {*/
- /*DPRINT(DEBUG_INFO, "Handle new thread\n"); */
- /*create_trusted_thread(); */
- /*DPRINT(DEBUG_INFO, "Stack pointer %p \n", stack); */
- /*return_from_clone_syscall(stack);*/
- /*return 0; */
-/*}*/
+    INTR_RES(read(fd, buf,COMMAND), res); 
 
+    if (strncmp(buf, START_COMMAND, sizeof(START_COMMAND)) || res < COMMAND) 
+          die("Wait for the remote process");       
+
+    DPRINT(DEBUG_INFO, "Process syncronised with the remote process\n"); 
+}
 int  trusted_thread(void * arg)
 {
 
@@ -248,6 +239,7 @@ int create_trusted_thread()
 
   DPRINT(DEBUG_INFO, "The trusted thread has been created\n");
 
+  wait_for_remote_process(); 
   return SUCCESS; 
 }
 

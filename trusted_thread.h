@@ -7,7 +7,10 @@
 #include "sandbox.h" 
 #include "handler.h"
 
+#define STACK_SIZE 0x8000
+
 typedef enum {UNTRUSTED_THREAD, TRUSTED_THREAD} thread_type;
+
 struct thread_info
 {
   pid_t pid;
@@ -48,4 +51,5 @@ struct untrusted_thread_list {
 
 extern long do_syscall( struct syscall_request * );
 extern int  create_trusted_thread(); 
+extern char * allocate_stack(size_t);  
 #endif /* end of include guard: TRUSTED_THREAD_H */
