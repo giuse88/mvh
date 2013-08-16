@@ -25,7 +25,7 @@ const struct policy public_policy[] = {
   --------------------------------------------------------------------------------  */ 
     { __NR_exit,            DEFAULT_UNTRUSTED,         DEFAULT_TRUSTED},
     { __NR_exit_group,      DEFAULT_UNTRUSTED,         trusted_exit_group},
-    { __NR_open,            untrusted_open,            NO_HANDLER},
+    { __NR_open,            untrusted_open,            trusted_patch },
     { __NR_openat,          untrusted_openat,          NO_HANDLER},
 /*     The trusted must be included  for the close system call*/
      //because some programs close the standard file descriptors 

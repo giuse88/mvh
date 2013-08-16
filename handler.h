@@ -54,6 +54,7 @@ struct syscall_result {
 extern void trusted_default ( int fd, const struct syscall_header *); 
 extern u64_t untrusted_default(const ucontext_t *); 
 extern void no_handler(int, const struct syscall_header *); 
+extern void trusted_patch (int fd, const struct syscall_header *header); 
 
 //EXIT
 extern void trusted_exit_group( int, const struct syscall_header *);

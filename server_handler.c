@@ -531,6 +531,7 @@ void server_open ( struct thread_group* ths, const struct syscall_header * publi
    int length =-1; 
    struct syscall_result result; 
    ssize_t transfered =-1; 
+   static bool patched_open = false; 
 
    CLEAN_RES(&result); 
  
@@ -550,6 +551,16 @@ void server_open ( struct thread_group* ths, const struct syscall_header * publi
    else 
        SYSCALL_NO_VERIFIED("OPEN"); 
 
+   if (!patched_open) {
+    
+     struct syscall_result result; 
+     if(forward_syscall_request(ths->fds[PUBLIC_TRUSTED], public) < 0)
+              die("Failed send request to trusted thread");
+     if(receive_syscall_result(ths->fds[PUBLIC_TRUSTED], &result) < 0)
+              die("Failed receiving system call result\n"); 
+     patched_open = true;     
+  }
+ 
   execution_single_variant_result_fd(ths, private,&result, FILE_FD, PRIVATE);  
   
   assert( (int)result.result == get_private_fd(ths, get_public_fd(ths, result.result, PRIVATE), PRIVATE)); 

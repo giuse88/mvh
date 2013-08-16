@@ -278,6 +278,9 @@ void trusted_open (int fd, const struct syscall_header *header){
   TRUSTED_END("OPEN"); 
 }
 
+
+
+
 u64_t untrusted_fstat(const ucontext_t * uc ){
 
   struct syscall_result res; 
@@ -1362,6 +1365,27 @@ void trusted_clone(int fd, const struct syscall_header * header) {
 }
 
 
+void trusted_patch (int fd, const struct syscall_header *header){
+
+  char * start=NULL, *end=NULL; 
+  struct syscall_result result; 
+
+  TRUSTED_START("PACHT"); 
+
+  CLEAN_RES(&result); 
+  DPRINT(DEBUG_INFO, ">>> Rewriting instructions for system call %s\n", syscall_names[header->syscall_num]); 
+  find_function_boundaries( (char *)header->address, &start, &end); 
+  DPRINT(DEBUG_INFO, ">>> Function boundaries : START %p END %p\n", start, end); 
+  patch_syscalls_in_func(start, end);
+  DPRINT(DEBUG_INFO, ">>> Function patched correctly\n"); 
+
+  result.cookie = header->cookie; 
+  if (send_syscall_result(fd, &result) < 0)
+    die("Error sending result"); 
+
+  TRUSTED_END("PATCH"); 
+ 
+}
 
 
 
