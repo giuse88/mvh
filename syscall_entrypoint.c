@@ -1,46 +1,17 @@
 #include "syscall_entrypoint.h"
-#include "debug.h"
-#include "sandbox.h"
 #include "trusted_thread.h"
 #include "handler.h" 
+#include <signal.h>
+#include <unistd.h> 
+#include "x86_decoder.h"
+#include "syscall_table.h"
+#include "tls.h" 
 
-// TODO(markus): change this into a function that returns the address of the
-// assembly code. If that isn't possible for sandbox_clone, then move that
-// function into a *.S file
+
 asm(
     ".pushsection .text, \"ax\", @progbits\n"
 
-    // This is the special wrapper for the clone() system call. The code
-    // relies on the stack layout of the system call entrypoint (c.f. below).
-    // It passes the stack pointer as an additional argument to
-/*    // syscall__clone(), so that upon starting the child, register values can*/
-    /*// be restored and the child can start executing at the correct IP,*/
-    /*// instead of trying to run in the trusted thread.*/
-    /*"syscall_clone:"*/
-    /*".internal syscall_clone\n"*/
-    /*".globl syscall_clone\n"*/
-    /*".type syscall_clone, @function\n"*/
-/*#if defined(__x86_64__)*/
-    /*// Skip the 8 byte return address into the system call entrypoint. The*/
-    /*// following bytes are the saved register values that we need to restore*/
-    /*// upon return from clone() in the new thread.*/
-    /*"lea 8(%rsp), %r9\n"*/
-    /*"jmp sandbox__clone\n"*/
-/*#elif defined(__i386__)*/
-    /*// As i386 passes function arguments on the stack, we need to skip a few*/
-    /*// more values before we can get to the saved registers.*/
-    /*"mov 28(%esp), %eax\n"*/
-    /*"mov %eax, 24(%esp)\n"*/
-    /*"jmp sandbox__clone\n"*/
-/*#else*/
-/*#error Unsupported target platform*/
-/*#endif*/
-    /*".size syscall_clone, .-syscall_clone\n"*/
-
-
-    // This is the entrypoint which is called by the untrusted code, trying to
-    // make a system call.
-    "syscall_enter_without_frame:"
+   "syscall_enter_without_frame:"
     ".internal syscall_enter_without_frame\n"
     ".globl syscall_enter_without_frame\n"
     ".type syscall_enter_without_frame, @function\n"
@@ -48,14 +19,10 @@ asm(
     "mov  0(%rsp), %r11\n"         // add fake return address by duplicating
     "push %r11\n"                  // real return address
     /* fall through */
-#elif defined(__i386__)
-    "push %eax\n"                  // add fake return address, which in this
-    "mov  4(%esp), %eax\n"         // case is identical to the real return
-    "xchg %eax, 0(%esp)\n"         // address
-    /* fall through */
 #else
-#error Unsupported target platform
+  #error Unsupported target platform
 #endif
+
     ".size syscall_enter_without_frame, .-syscall_enter_without_frame\n"
 
     "syscall_enter_with_frame:"
@@ -63,15 +30,6 @@ asm(
     ".globl syscall_enter_with_frame\n"
     ".type syscall_enter_with_frame, @function\n"
 #if defined(__x86_64__)
-    // Check for rt_sigreturn(). It needs to be handled specially.
-/*    "cmp  $15, %rax\n"             // NR_rt_sigreturn*/
-    /*"jnz  1f\n"*/
-    /*"add  $0x90, %rsp\n"           // pop return addresses and red zone*/
-  /*"0:syscall\n"                    // rt_sigreturn() is unrestricted*/
-    /*"mov  $66, %edi\n"             // rt_sigreturn() should never return*/
-    /*"mov  $231, %eax\n"            // NR_exit_group*/
-    /*"jmp  0b\n"*/
-
     // Save all registers
   "1:push %rbp\n"
     "movq  $0xDEADBEEFDEADBEEF, %rbp\n" // marker used by breakpad to remove
@@ -374,32 +332,27 @@ int pad_request( unsigned long arg0,
                   unsigned long sysnum)
 {
 
-   struct  syscall_request request;  
-   struct syscall_result  result; 
+   ucontext_t uc; 
+   int result; 
+   pid_t tid= (pid_t)get_local_tid(); 
 
-    memset((void*)&request, 0, sizeof(request)); 
-    memset((void*)&result, 0, sizeof(result)); 
-    
-    request.syscall_identifier = sysnum; 
-    request.arg0 = arg0;  
-    request.arg1 = arg1; 
-    request.arg2 = arg2; 
-    request.arg3 = arg3;  
-    request.arg4 = arg4;
-    request.arg5 = arg5; 
+   memset((void*)&uc, 0, sizeof(uc)); 
+   
+   uc.uc_mcontext.gregs[REG_SYSCALL] = sysnum; 
+   uc.uc_mcontext.gregs[REG_ARG0] = arg0;  
+   uc.uc_mcontext.gregs[REG_ARG1] = arg1; 
+   uc.uc_mcontext.gregs[REG_ARG2] = arg2; 
+   uc.uc_mcontext.gregs[REG_ARG3] = arg3;  
+   uc.uc_mcontext.gregs[REG_ARG4] = arg4;
+   uc.uc_mcontext.gregs[REG_ARG5] = arg5; 
 
-    // TODO this needs to be rewritten 
-    /*// debug */
-    /*print_syscall_info(&request); */
-
-    /*// send */
-    /*send_syscall_request(&request);*/
-
-    /*// result */
-    /*get_syscall_result(&result); */
-
-    // put the result in rax
-    return result.result; 
+   DPRINT(DEBUG_INFO, "== [%d] Start emulation of %s \n", tid ,syscall_names[sysnum]);
+  
+   result = syscall_table_[sysnum].handler_untrusted(&uc); 
+ 
+   DPRINT(DEBUG_INFO, "== [%d] End emulation of %s\n\n", tid,syscall_names[sysnum]);
+ 
+   return result; 
 
 }
 
