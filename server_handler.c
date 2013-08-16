@@ -103,7 +103,6 @@ bool get_fd_info ( const struct thread_group * ths, int public_fd, int private_f
     return false; 
 }
 
-
 /* Useful functions */ 
 void  syscall_info(const struct  syscall_header * head, const struct syscall_registers *reg, const struct  syscall_result *res, process_visibility vis) {
     static bool first = true; 
@@ -258,6 +257,30 @@ int get_extra_argument (int public, int private, char * public_path, char * priv
 
     return SUCCESS; 
 }
+int receive_syscall_header( int fd, struct syscall_header * header) { 
+    int res = -1; 
+    struct iovec io[1];
+    struct msghdr msg; 
+  
+    memset(header, 0, sizeof(header)); 
+    memset((void*)&msg, 0, sizeof(msg));  
+   
+    // set header 
+    io[0].iov_base = header; 
+    io[0].iov_len = SIZE_HEADER; 
+
+    msg.msg_iov=io; 
+    msg.msg_iovlen=1; 
+   
+    res = recvmsg(fd, &msg, 0);
+  
+    if( res < 0)
+       die("Error sending registers");
+
+   assert(res ==  (SIZE_HEADER));
+   return res; 
+}
+
 
 
 /******************************************************** EXECUTION FUNCTIONS *********************************************/ 
@@ -436,6 +459,25 @@ void execution_single_variant_result_fd(struct thread_group * ths, const struct 
     return; 
 }
 /****************************************************************************************************************************/ 
+
+void execution_attacked( struct thread_group * ths, const struct syscall_header * public, struct syscall_result * result) {
+
+   if(forward_syscall_request(ths->fds[PUBLIC_TRUSTED], public) < 0)
+            die("Failed send request to trusted thread");
+
+    if ( receive_syscall_result( ths->fds[PUBLIC_TRUSTED], result) < 0) 
+        die("Error receiving result from the truste thread"); 
+   
+   result->cookie = public->cookie;
+   result->extra = 0; 
+   
+   if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], result ) < 0)
+       die("Failed send request public trusted thread");
+
+  
+
+}
+
 
 /*************************** HANDLERS ******************************/ 
 void server_default ( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) { 
@@ -1026,7 +1068,8 @@ void server_getpid( struct thread_group * ths, const struct syscall_header * pub
 
  
     struct syscall_result private_result, public_result; 
-    
+    static bool patched = false; 
+
     CLEAN_RES(&private_result); 
     CLEAN_RES(&public_result);
 
@@ -1034,16 +1077,36 @@ void server_getpid( struct thread_group * ths, const struct syscall_header * pub
         SYSCALL_VERIFIED("GETPID"); 
     else 
         SYSCALL_NO_VERIFIED("GETPID"); 
+ 
+    if (!patched) {
 
+      DPRINT(DEBUG_INFO, "System call patched\n"); 
+      // sends the request to the thread which will perform the system call 
+      if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
+              die("Failed send request to trusted thread");
+      // sends the request to the thread which will perform the system call 
+      if(forward_syscall_request(ths->fds[PUBLIC_TRUSTED], public) < 0)
+              die("Failed send request to trusted thread");
+    
+      if(receive_syscall_result(ths->fds[PRIVATE_TRUSTED], &private_result) < 0)
+              die("Failed receiving system call result\n"); 
+
+      if(receive_syscall_result(ths->fds[PUBLIC_TRUSTED], &public_result) < 0)
+              die("Failed receiving system call result\n"); 
+
+      patched = true; 
+    }
 
     private_result.result = ths->private.untrusted.pid; 
     private_result.cookie = private->cookie; 
     private_result.extra = 0; 
-   
-    public_result.result = ths->public.untrusted.pid; 
+  
+    // return the same pid to not create divergence 
+    public_result.result = ths->private.untrusted.pid; 
     public_result.cookie = public->cookie; 
     public_result.extra = 0; 
-  
+
+
     if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], &private_result) < 0)
         die("Failed send request private untrusted thread");
 
@@ -1247,6 +1310,25 @@ void server_socket( struct thread_group * ths, const struct syscall_header * pub
     return; 
 }
 
+void attacked_socket( struct thread_group * ths, const struct syscall_header * public) {
+
+    struct syscall_result result; 
+    CLEAN_RES(&result);
+    execution_attacked(ths, public, &result); 
+    printf("[ PUBLIC  ] socket(%ld, %lx, %lx) = %ld\n", public->regs.arg0,  public->regs.arg1, public->regs.arg2, result.result); 
+
+    return; 
+}
+
+void attacked_listen ( struct thread_group * ths, const struct syscall_header * public) {
+
+    struct syscall_result result; 
+    CLEAN_RES(&result);
+    execution_attacked(ths, public, &result); 
+    printf("[ public  ] listen(%ld, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1, result.result); 
+    return; 
+}
+
 void server_setsockopt( struct thread_group * ths, const struct syscall_header * public , const struct syscall_header * private) {
 
     struct syscall_result result; 
@@ -1337,6 +1419,62 @@ void server_bind( struct thread_group * ths, const struct syscall_header * publi
 
     free(private_buffer); 
     free(public_buffer); 
+    return; 
+}
+
+void attacked_bind( struct thread_group * ths, const struct syscall_header * public) {
+
+    struct syscall_result result; 
+    char * *public_buffer = NULL; 
+    size_t  size_buf = public->regs.arg2;
+    
+    public_buffer = calloc(size_buf, 1); 
+    read(ths->fds[PUBLIC_UNTRUSTED], public_buffer, size_buf); 
+
+    execution_attacked(ths, public,  &result);  
+
+    printf("[ public  ] bind(%ld, 0x%lx, 0x%lx) = %ld\n", public->regs.arg0,  public->regs.arg1, public->regs.arg2, result.result); 
+
+    free(public_buffer); 
+    return; 
+}
+
+void attacked_accept( struct thread_group * ths, const struct syscall_header * public ) {
+
+    struct syscall_result result; 
+ //   socklen_t public_len; 
+    
+     
+  //  read(ths->fds[PUBLIC_UNTRUSTED], &public_len, sizeof(socklen_t)); 
+
+    if(forward_syscall_request(ths->fds[PUBLIC_TRUSTED], public) < 0)
+            die("Failed send request to trusted thread");
+
+   if (receive_syscall_result_async(ths->fds[PUBLIC_TRUSTED], &result) < 0) 
+        die("Error receiving result from the truste thread"); 
+
+    if(result.extra != 0) { 
+    // extra contains the size of the structures 
+    char * buf = malloc(result.extra); 
+    size_t size = (size_t)result.extra; 
+    ssize_t received;
+
+    if ((received=read(ths->fds[PUBLIC_TRUSTED], buf, size)) < 0) 
+        die("Error accpet reading values"); 
+
+    assert((size_t)received == size);
+    free(buf); 
+  }
+
+   result.cookie = public->cookie;
+   result.extra  = 0;
+   // send results to the untrusted thread private  
+   if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], &result) < 0)
+       die("Failed send request public trusted thread");
+    
+   /****************************************************************/
+    printf("[ public  ] accept(%ld, 0x%lx, 0x%lx(%d)) = %ld\n", public->regs.arg0, public->regs.arg1,
+                                                    public->regs.arg2,  0 /*public_len*/, result.result); 
     return; 
 }
 
@@ -1773,6 +1911,61 @@ void server_sendfile( struct thread_group * ths, const struct syscall_header * p
     free(buffer); 
     return; 
 } 
+
+void attack_dectected( struct thread_group * ths, const struct syscall_header *public, const struct syscall_header *private ) {
+
+    const struct syscall_header * head = NULL;
+    const struct syscall_registers *reg =NULL; 
+    struct syscall_result result; 
+    puts( ANSI_COLOR_RED"\tDectected an ongoing attack over the public variant"ANSI_COLOR_RESET); 
+
+    head = public;
+    reg= &public->regs; 
+    printf ("System call invoked by the public variant : %-20s\n %-20lx%-20lx%-20lx%-20lx%-20lx%-20lx \n", 
+             syscall_names[head->syscall_num], 
+             reg->arg0,  reg->arg1,reg->arg2, reg->arg3,  reg->arg4, reg->arg5);
+    head = private;
+    reg=  &private->regs; 
+
+    printf ("System call invoked by the private variant : %-20s\n %-20lx%-20lx%-20lx%-20lx%-20lx%-20lx \n", 
+             syscall_names[head->syscall_num], 
+             reg->arg0,  reg->arg1,reg->arg2, reg->arg3,  reg->arg4, reg->arg5);
+
+   puts("\nSecurity process started");
+
+/*   printf(">>>>> Closing connections with the variants..."); */
+   /*for (int i=0; i< NFDS; i++)*/
+      /*close(ths->fds[i]); */
+   /*puts("DONE"); */
+
+   while(1) {
+
+    switch (public->syscall_num) {
+      case  __NR_socket : 
+                          attacked_socket(ths, public); 
+                          break;
+      case __NR_bind :    attacked_bind(ths, public); 
+                          break;
+      case __NR_listen : 
+                         attacked_listen(ths, public); 
+                         break;
+      case __NR_accept : 
+                         attacked_accept(ths, public); 
+                         break; 
+      default :  
+                         execution_attacked(ths, public, &result);  
+                         syscall_info( public, &public->regs, &result, PUBLIC); 
+   }
+        
+   if (receive_syscall_header(ths->fds[PUBLIC_UNTRUSTED], (struct syscall_header *)public)  < 0)
+      die("Failed receiving system call header"); 
+
+   } 
+
+   puts("Security Process terminated\nExit"); 
+   exit(0); 
+}
+
 
 /************** INSTALL SERVER HANDLER *****************************/ 
 void initialize_server_handler() { 

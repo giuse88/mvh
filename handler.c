@@ -5,6 +5,7 @@
 #include "bpf-filter.h"
 #include "trusted_thread.h"
 #include "utils.h"
+#include "library.h"
 
 #include <sys/mman.h> 
 #include <sys/syscall.h> 
@@ -45,7 +46,7 @@ int receive_syscall_result (struct syscall_result * res){
 
     INTR_RES(read(fd, (char *)res, SIZE_RESULT), received); 
 
-    DPRINT(DEBUG_INFO, "TID %d, FD %d received %lu %lu\n", tid, fd,res->cookie , res->result);
+    //DPRINT(DEBUG_INFO, "TID %d, FD %d received %d %d\n", tid, fd, (int)res->cookie , (int)res->result);
 
     if (res->cookie != tid || received != SIZE_RESULT)
         die("cookie verification failed (result)"); 
@@ -169,6 +170,26 @@ void no_handler (int fd, const struct syscall_header *header){
 }
 
 
+void trusted_getpid (int fd, const struct syscall_header *header){
+
+  char * start=NULL, *end=NULL; 
+  struct syscall_result result; 
+
+  TRUSTED_START("GETPID"); 
+
+  CLEAN_RES(&result); 
+  find_function_boundaries( (char *)header->address, &start, &end); 
+  DPRINT(DEBUG_INFO, "Function boundaries : START %p END %p\n", start, end); 
+  patch_syscalls_in_func(start, end);
+  DPRINT(DEBUG_INFO, "Function patched correctley\n"); 
+
+  result.cookie = header->cookie; 
+  if (send_syscall_result(fd, &result) < 0)
+    die("Error sending result"); 
+
+  TRUSTED_END("GETPID"); 
+ 
+}
 /*EXIT_GROUP */
 void trusted_exit_group( int fd, const struct syscall_header *header) {
   
@@ -225,6 +246,36 @@ u64_t untrusted_open(const ucontext_t * uc ){
   UNTRUSTED_END("OPEN"); 
 
   return (u64_t)result.result; 
+}
+void trusted_open (int fd, const struct syscall_header *header){
+
+  struct syscall_result result; 
+  struct syscall_request request;
+  static bool patched =false; 
+  char *start =NULL, *end =NULL; 
+
+  memset(&result, 0, sizeof(result)); 
+  memset(&request, 0, sizeof(request)); 
+
+  TRUSTED_START("OPEN"); 
+
+  request.syscall_identifier = header->syscall_num; 
+  memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
+  
+  if (!patched) {
+    find_function_boundaries( (char *)header->address, &start, &end); 
+    DPRINT(DEBUG_INFO, ">>> Function boundaries : START %p END %p\n", start, end); 
+    patch_syscalls_in_func(start, end);
+    DPRINT(DEBUG_INFO, ">>> Function patched correctley\n"); 
+    patched =true; 
+  }
+
+  result.result = do_syscall(&request);
+  result.cookie = header->cookie; 
+  result.extra = 0; 
+  send_syscall_result(fd, &result); 
+
+  TRUSTED_END("OPEN"); 
 }
 
 u64_t untrusted_fstat(const ucontext_t * uc ){
@@ -1025,14 +1076,15 @@ u64_t untrusted_accept(const ucontext_t * uc ){
 
    buf = (char *)uc->uc_mcontext.gregs[REG_ARG2]; 
    size  = sizeof(socklen_t);
-   extra = size; 
+   extra = (buf != NULL) ? size : 0; 
   
    if (send_syscall_header(uc, extra)< 0)
       die("Send syscall header"); 
-  
+ 
+   if (buf != NULL ) {
    if (send_extra(fd, buf, size) < 0) 
      die("Failed send extra (Untrudted write)"); 
-
+   }
    if(receive_syscall_result(&res) < 0 )
        die("failede get_syscall_result"); 
    assert( cookie == (u64_t)res.cookie);
@@ -1067,21 +1119,26 @@ void  trusted_accept   ( int fd, const struct syscall_header * header) {
   request.syscall_identifier = header->syscall_num; 
   memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
   
-  DPRINT(DEBUG_INFO, ">>> The size of the structure is %d\n", *(socklen_t*)header->regs.arg2); 
+ // DPRINT(DEBUG_INFO, ">>> The size of the structure is %d\n", *(socklen_t*)header->regs.arg2); 
 
   result.result = do_syscall(&request);
   result.cookie = header->cookie; 
   
+  if ((void*)header->regs.arg2 != NULL) { 
   size_t buf_len = *(socklen_t*)header->regs.arg2; 
   result.extra = buf_len; 
 
   DPRINT(DEBUG_INFO, ">>> The size of the structure is %lu\n", buf_len); 
-
   transfered =send_result_with_extra(fd, &result, (char *)header->regs.arg1, buf_len);  
   if ( transfered < 0) 
       die("recvmsg (fstat handler)"); 
   CHECK(transfered, buf_len + SIZE_RESULT, result.extra); 
-  
+  }
+  else {
+    result.extra = 0; 
+    send_syscall_result(fd, &result); 
+  }
+
   TRUSTED_END("ACCEPT"); 
 
   return; 

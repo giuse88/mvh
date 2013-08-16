@@ -86,147 +86,147 @@ out:
   return ret;
 }
 
-inline void maps_init(struct maps *maps, int fd) {
-  maps->fd = fd;
-  maps->vsyscall = 0;
-  maps->library_hash = mmalloc(sizeof(struct hlist_head) * libraryhash_size);
-  for (int i = 0; i < libraryhash_size; i++)
-    INIT_HLIST_HEAD(&maps->library_hash[i]);
-}
+/*inline void maps_init(struct maps *maps, int fd) {*/
+  /*maps->fd = fd;*/
+  /*maps->vsyscall = 0;*/
+  /*maps->library_hash = mmalloc(sizeof(struct hlist_head) * libraryhash_size);*/
+  /*for (int i = 0; i < libraryhash_size; i++)*/
+    /*INIT_HLIST_HEAD(&maps->library_hash[i]);*/
+/*}*/
 
-int maps_read(struct maps *maps) {
+/*int maps_read(struct maps *maps) {*/
   
-  if (lseek(maps->fd, 0, SEEK_SET) < 0)
-    return -EIO;
+  /*if (lseek(maps->fd, 0, SEEK_SET) < 0)*/
+    /*return -EIO;*/
 
-  char buf[MAX_BUF_SIZE] = { '\0' };
-  char *from = buf, *to = buf, *next = buf;
-  char *bufend = buf + MAX_BUF_SIZE - 1;
+  /*char buf[MAX_BUF_SIZE] = { '\0' };*/
+  /*char *from = buf, *to = buf, *next = buf;*/
+  /*char *bufend = buf + MAX_BUF_SIZE - 1;*/
 
 
-  do {
-    from = next; /* advance to the start of the next line */
-    next = (char *)memchr(from, '\n', to - from); /* check if we have another line */
-    if (!next) {
-      /* shift/fill the buffer */
-      size_t len = to - from;
-      /* move the current text to the start of the buffer */
-      memmove(buf, from, len);
-      from = buf;
-      to = buf + len;
-      /* fill up buffer with text */
-      size_t nread;
-      while (to < bufend) {
-        nread = read(maps->fd, to, bufend - to);
-        if (nread > 0)
-          to += nread;
-        else
-          break;
-      }
-      if (to != bufend && !nread)
-        memset(to, 0, bufend - to); /* zero-out remaining space */
-      *to = '\n'; /* sentinel */
-      next = (char *)memchr(from, '\n', to + 1 - from);
-    }
-    *next = 0; /* turn newline into 0 */
-    next += next < to ? 1 : 0; /* skip NULL if not end of text */
+  /*do {*/
+    /*from = next; [> advance to the start of the next line <]*/
+    /*next = (char *)memchr(from, '\n', to - from); [> check if we have another line <]*/
+    /*if (!next) {*/
+      /*[> shift/fill the buffer <]*/
+      /*size_t len = to - from;*/
+      /*[> move the current text to the start of the buffer <]*/
+      /*memmove(buf, from, len);*/
+      /*from = buf;*/
+      /*to = buf + len;*/
+      /*[> fill up buffer with text <]*/
+      /*size_t nread;*/
+      /*while (to < bufend) {*/
+        /*nread = read(maps->fd, to, bufend - to);*/
+        /*if (nread > 0)*/
+          /*to += nread;*/
+        /*else*/
+          /*break;*/
+      /*}*/
+      /*if (to != bufend && !nread)*/
+        /*memset(to, 0, bufend - to); [> zero-out remaining space <]*/
+      /**to = '\n'; [> sentinel <]*/
+      /*next = (char *)memchr(from, '\n', to + 1 - from);*/
+    /*}*/
+    /**next = 0; [> turn newline into 0 <]*/
+    /*next += next < to ? 1 : 0; [> skip NULL if not end of text <]*/
 
-    unsigned long start, end;
-    char flags[4], *pathname;
-    unsigned long offset;
-    int major, minor;
-    long inode;
-    int nameoff;
+    /*unsigned long start, end;*/
+    /*char flags[4], *pathname;*/
+    /*unsigned long offset;*/
+    /*int major, minor;*/
+    /*long inode;*/
+    /*int nameoff;*/
 
-    // Parse each line of /proc/<pid>/maps file.
-    if (sscanf(from, "%"SCNx64"-%"SCNx64" %4s %"SCNx64" %x:%x %"SCNd64" %n",
-        &start, &end, flags, &offset, &major, &minor, &inode, &nameoff) > 6) {
-      // Must have permissions to read and execute, and be non-zero size.
-      if ((flags[0] == 'r') && (flags[2] == 'x') && ((end - start) > 0)) {
-        /* allocate a new region structure */
-        struct region *reg = (struct region *)mmalloc(sizeof(struct region));
-        //assert(reg != NULL);
+    /*// Parse each line of /proc/<pid>/maps file.*/
+    /*if (sscanf(from, "%"SCNx64"-%"SCNx64" %4s %"SCNx64" %x:%x %"SCNd64" %n",*/
+        /*&start, &end, flags, &offset, &major, &minor, &inode, &nameoff) > 6) {*/
+      /*// Must have permissions to read and execute, and be non-zero size.*/
+      /*if ((flags[0] == 'r') && (flags[2] == 'x') && ((end - start) > 0)) {*/
+        /*[> allocate a new region structure <]*/
+        /*struct region *reg = (struct region *)mmalloc(sizeof(struct region));*/
+        /*//assert(reg != NULL);*/
 
-        // Create new region
-        rb_init_node(&reg->rb_region);
+        /*// Create new region*/
+        /*rb_init_node(&reg->rb_region);*/
 
-        reg->start = (void *)start;
-        reg->end = (void *)end;
-        reg->size = (size_t)(end - start);
+        /*reg->start = (void *)start;*/
+        /*reg->end = (void *)end;*/
+        /*reg->size = (size_t)(end - start);*/
 
-        // Setup protection permissions
-        int perms = PROT_NONE;
-        if (flags[0] == 'r')
-          perms |= PROT_READ;
-        if (flags[1] == 'w')
-          perms |= PROT_WRITE;
-        if (flags[2] == 'x')
-          perms |= PROT_EXEC;
+        /*// Setup protection permissions*/
+        /*int perms = PROT_NONE;*/
+        /*if (flags[0] == 'r')*/
+          /*perms |= PROT_READ;*/
+        /*if (flags[1] == 'w')*/
+          /*perms |= PROT_WRITE;*/
+        /*if (flags[2] == 'x')*/
+          /*perms |= PROT_EXEC;*/
 
-        if (flags[3] == 'p')
-          perms |= MAP_PRIVATE;
-        else if (flags[3] == 's')
-          perms |= MAP_SHARED;
-        reg->perms = perms;
+        /*if (flags[3] == 'p')*/
+          /*perms |= MAP_PRIVATE;*/
+        /*else if (flags[3] == 's')*/
+          /*perms |= MAP_SHARED;*/
+        /*reg->perms = perms;*/
 
-        // Set region offset
-        reg->offset = (Elf_Addr)offset;
+        /*// Set region offset*/
+        /*reg->offset = (Elf_Addr)offset;*/
 
-        // Device and number
-        reg->dev = minor | (major << 8);
-        reg->inode = inode;
+        /*// Device and number*/
+        /*reg->dev = minor | (major << 8);*/
+        /*reg->inode = inode;*/
 
-        // Save pathname
-        if (nameoff == 0 || (size_t) nameoff > strlen(from)) {
-          nameoff = strlen(from);
-        }
+        /*// Save pathname*/
+        /*if (nameoff == 0 || (size_t) nameoff > strlen(from)) {*/
+          /*nameoff = strlen(from);*/
+        /*}*/
 
-        pathname = from + nameoff;
+        /*pathname = from + nameoff;*/
 
-        if (strncmp(pathname, "[vdso]", 6) == 0) {
-          // /proc/self/maps has a misleading file offset
-          offset = 0;
-          reg->type = REGION_VDSO;
-        } else if (strncmp(pathname, "[vsyscall]", 10) == 0) {
-          maps->vsyscall = (char *)start;
-          reg->type = REGION_VSYSCALL;
-        } else if (pathname[0] == '\0') {
-          reg->type = REGION_BSS;
-        } else {
-          reg->type = REGION_LIBRARY;
-          //char exename[128], linkbuf[MAX_LINKBUF_SIZE];
-          //size_t linkbuf_size;
+        /*if (strncmp(pathname, "[vdso]", 6) == 0) {*/
+          /*// /proc/self/maps has a misleading file offset*/
+          /*offset = 0;*/
+          /*reg->type = REGION_VDSO;*/
+        /*} else if (strncmp(pathname, "[vsyscall]", 10) == 0) {*/
+          /*maps->vsyscall = (char *)start;*/
+          /*reg->type = REGION_VSYSCALL;*/
+        /*} else if (pathname[0] == '\0') {*/
+          /*reg->type = REGION_BSS;*/
+        /*} else {*/
+          /*reg->type = REGION_LIBRARY;*/
+          /*//char exename[128], linkbuf[MAX_LINKBUF_SIZE];*/
+          /*//size_t linkbuf_size;*/
 
-          //snprintf(exename, sizeof(exename), "/proc/%u/exe", pid);
-          //if ((linkbuf_size = readlink(exename, linkbuf, MAX_LINKBUF_SIZE)) > 0)
-          //  linkbuf[linkbuf_size] = 0;
-          //else
-          //  linkbuf[0] = 0;
+          /*//snprintf(exename, sizeof(exename), "/proc/%u/exe", pid);*/
+          /*//if ((linkbuf_size = readlink(exename, linkbuf, MAX_LINKBUF_SIZE)) > 0)*/
+          /*//  linkbuf[linkbuf_size] = 0;*/
+          /*//else*/
+          /*//  linkbuf[0] = 0;*/
 
-          //if (strncmp(pathname, linkbuf, MAX_LINKBUF_SIZE) == 0)
-          //  reg->type = REGION_EXECUTABLE;
-          //else
-          //  reg->type = REGION_LIBRARY;
-        }
-        //reg->pathname = strdup(pathname); /* TODO: avoid strdup (becasue of malloc) */
+          /*//if (strncmp(pathname, linkbuf, MAX_LINKBUF_SIZE) == 0)*/
+          /*//  reg->type = REGION_EXECUTABLE;*/
+          /*//else*/
+          /*//  reg->type = REGION_LIBRARY;*/
+        /*}*/
+        /*//reg->pathname = strdup(pathname); [> TODO: avoid strdup (becasue of malloc) <]*/
 
-        struct library *lib = library_find(maps->library_hash, pathname);
-        if (!lib) {
-          lib = mmalloc(sizeof(*lib));
-          library_init(lib, pathname, maps);
-          library_add(maps->library_hash, lib);
-          DPRINT(DEBUG_ALL, "library %s\n", lib->pathname);
-        }
+        /*struct library *lib = library_find(maps->library_hash, pathname);*/
+        /*if (!lib) {*/
+          /*lib = mmalloc(sizeof(*lib));*/
+          /*library_init(lib, pathname, maps);*/
+          /*library_add(maps->library_hash, lib);*/
+          /*DPRINT(DEBUG_ALL, "library %s\n", lib->pathname);*/
+        /*}*/
 
-        rb_insert_region(lib, offset, perms, &reg->rb_region);
-        if (reg->type & REGION_VDSO)
-          lib->vdso = true;
-      }
-    }
-  } while (to > buf);
+        /*rb_insert_region(lib, offset, perms, &reg->rb_region);*/
+        /*if (reg->type & REGION_VDSO)*/
+          /*lib->vdso = true;*/
+      /*}*/
+    /*}*/
+  /*} while (to > buf);*/
 
-  return 0;
-}
+  /*return 0;*/
+/*}*/
 
 
 #define MAX_DISTANCE (1536 << 20)

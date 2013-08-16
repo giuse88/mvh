@@ -84,35 +84,7 @@ void print_thread_group(const struct thread_group * group){
 }
 /********************************************/ 
 
-void attack_dectected( const struct thread_group * ths, const struct syscall_header *public, const struct syscall_header *private ) {
 
-    const struct syscall_header * head = NULL;
-    const struct syscall_registers *reg =NULL; 
-
-    puts( ANSI_COLOR_RED"\tDectected an ongoing attack over the public variant"ANSI_COLOR_RESET); 
-
-    head = public;
-    reg= &public->regs; 
-    printf ("System call invoked by the public variant : %-20s\n %-20lx%-20lx%-20lx%-20lx%-20lx%-20lx \n", 
-             syscall_names[head->syscall_num], 
-             reg->arg0,  reg->arg1,reg->arg2, reg->arg3,  reg->arg4, reg->arg5);
-    head = private;
-    reg=  &private->regs; 
-
-    printf ("System call invoked by the private variant : %-20s\n %-20lx%-20lx%-20lx%-20lx%-20lx%-20lx \n", 
-             syscall_names[head->syscall_num], 
-             reg->arg0,  reg->arg1,reg->arg2, reg->arg3,  reg->arg4, reg->arg5);
-
-   puts("\nSecurity process started");
-
-   printf(">>>>> Closing connections with the variants..."); 
-   for (int i=0; i< NFDS; i++)
-      close(ths->fds[i]); 
-   puts("DONE"); 
-
-   puts("Security Process terminated\nExit"); 
-   exit(0); 
-}
 
 
 int make_socket_non_blocking (int sfd){
@@ -140,30 +112,6 @@ static void start_application( int fd) {
     INTR_RES(write(fd, buf, COMMAND), res); 
     if (res < COMMAND) 
           die("start process");
-}
-
-int receive_syscall_header( int fd, struct syscall_header * header) { 
-    int res = -1; 
-    struct iovec io[1];
-    struct msghdr msg; 
-  
-    memset(header, 0, sizeof(header)); 
-    memset((void*)&msg, 0, sizeof(msg));  
-   
-    // set header 
-    io[0].iov_base = header; 
-    io[0].iov_len = SIZE_HEADER; 
-
-    msg.msg_iov=io; 
-    msg.msg_iovlen=1; 
-   
-    res = recvmsg(fd, &msg, 0);
-  
-    if( res < 0)
-       die("Error sending registers");
-
-   assert(res ==  (SIZE_HEADER));
-   return res; 
 }
 
 void  * handle_thread_pair(void * arg) {

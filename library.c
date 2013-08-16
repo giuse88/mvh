@@ -170,7 +170,6 @@ void make_writable(void * addr , bool state) {
 
 }
 
-
 bool is_safe_insn(unsigned short insn) {
   /* Check if the instruction has no unexpected side-effects. If so, it can
      be safely relocated from the function that we are patching into the
@@ -191,6 +190,29 @@ bool is_safe_insn(unsigned short insn) {
          (insn >= 0xC6 && insn <= 0xC7 /* MOV */) ||
          (insn == 0xF7) /* TEST, NOT, NEG, MUL, IMUL, DIV, IDIV */ ||
          (insn >= 0xF19 && insn <= 0xF1F) /* long NOP */;
+}
+
+int  find_function_boundaries( char * instr, char **start, char ** end ) 
+{
+
+   char * ptr=instr;
+
+   for (; *ptr != '\xC3'; )
+      next_inst((const char **)&ptr, true,0, 0, 0, 0, 0);
+    
+   *end=ptr; 
+
+   ptr=instr;
+
+   for (int nopcount=0; nopcount < 2 ; ptr--)
+       if(*ptr == '\x90')
+           nopcount++; 
+       else 
+           nopcount=0;
+
+   *start=ptr; 
+
+   return SUCCESS;
 }
 
 

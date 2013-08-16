@@ -1,7 +1,7 @@
 CC=gcc 
 CFLAGS = -g -std=gnu99 -O0 -Wall -Wextra -Wno-missing-field-initializers  \
 				 -Wno-unused-parameter -I. -fno-stack-protector -z execstack 
-DEBUG= -DCOLOR #-DDEBUG 
+DEBUG= -DCOLOR -DDEBUG 
 LDFLAGS=-ldl -g -lpthread  
 PWD=`pwd`
 LIB=
@@ -71,6 +71,11 @@ preload.o: preload.c
 preload.so: tls.o utils.o  handler.o syscall_table.o fault.o mmalloc.o library.o maps.o sandbox.o preload.o error.o trusted_thread.o bpf-filter.o x86_decoder.o syscall_entrypoint.o 
 	${LINKER}  ${LDFLAGS} -fPIC -shared handler.o utils.o error.o tls.o  fault.o syscall_table.o x86_decoder.o library.o bpf-filter.o maps.o mmalloc.o  preload.o syscall_entrypoint.o sandbox.o trusted_thread.o -o preload.so 
 
+hope: tls.c utils.c  handler.c syscall_table.c fault.S  mmalloc.c library.c maps.c sandbox.c preload.c  error.c trusted_thread.c bpf-filter.c x86_decoder.c syscall_entrypoint.c 
+	${LINKER} -std=gnu99 -g -fno-stack-protector -z execstack ${DEBUG} ${LDFLAGS}  handler.c utils.c error.c tls.c  fault.S syscall_table.c x86_decoder.c maps.c  library.c bpf-filter.c mmalloc.c  syscall_entrypoint.c sandbox.c trusted_thread.c tinyweb.c   -o hope
+
+
+
 private-http: 	
 	./mvh --private /home/giuseppe/lighttpd-1.4.28/src/lighttpd -D -f /home/giuseppe/lighttpd-1.4.28/lighttpd.conf 
 
@@ -112,4 +117,4 @@ gdb: mvh preload.so
 strace: 
 	@ strace -ff ./mvh /bin/ls -o calls.txt 
 clean: 
-	rm *.o *.so mvh mvh_server  
+	rm *.o *.so mvh mvh_server  hope

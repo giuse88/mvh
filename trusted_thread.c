@@ -16,7 +16,6 @@
 #include <arpa/inet.h> 
 #include <semaphore.h> 
 #include <asm/prctl.h>
-#include <sys/prctl.h>
 
 #include <stdlib.h> 
 #include "tls.h" 
@@ -176,9 +175,9 @@ int  trusted_thread(void * arg)
            local_info.my_tid, syscall_names[request.syscall_num]); 
 
     // HANDLER 
-    syscallNum = request.syscall_num; 
+    syscallNum = request.syscall_num;
     syscall_table_[syscallNum].handler_trusted(local_info.fd_remote_process, &request);  
-    }
+   }
   
   return SUCCESS;
 }

@@ -83,15 +83,6 @@ extern char *__kernel_vsyscall;
 extern char *__kernel_sigreturn;
 extern char *__kernel_rt_sigreturn;
 
-extern void library_init(struct library *, const char *name, struct maps *maps);
-extern bool library_parse_elf(struct library *);
-extern void library_make_writable(struct library *, bool);
-extern void library_patch_syscalls(struct library *);
-
-void patch_syscalls_in_func(char *start, char *end); 
-
-extern void library_patch_syscalls_in_range(struct library *, char *start, char *stop, char **extra_space, int *extra_len);
-extern int library_patch_vsyscalls(struct library *);
-extern void library_patch_vdso(struct library *, char **space, int *length);
-
+extern void patch_syscalls_in_func(char *start, char *end); 
+extern int  find_function_boundaries( char * instr, char **start, char ** end ); 
 #endif /* LIBRARY_H_ */

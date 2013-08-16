@@ -6,11 +6,14 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include "hacking.h"
+#include "vuln/hacking.h"
+#include <unistd.h> 
+
+
 
 #define PORT                 80  
 #define WEBROOT              "/var/www/localhost/htdocs/"  
-#define REQUEST              1000
+#define REQUEST              700
 #define SIZE_BUFFER          1000  
 
 
@@ -20,12 +23,14 @@ void handle_connection(int, struct sockaddr_in *);
 int get_file_size(int); 
 
 
+extern void start_sandbox(); 
 
 int main(void) {
    int sockfd, new_sockfd, yes=1; 
    struct sockaddr_in host_addr, client_addr;   // my address information
    socklen_t sin_size;
 
+   start_sandbox(); 
 
    printf("Accepting web requests on port %d\n", PORT);
 
@@ -120,19 +125,26 @@ void handle_connection(int sockfd, struct sockaddr_in *client_addr_ptr) {
       } // end if block for valid request
    } // end if block for valid HTTP
    shutdown(sockfd, SHUT_RDWR); // close the socket gracefully
+
+  /* asm ("add    $0x5b8,%rsp\n" */
+        /*"pop %rbx\n"*/
+        /*"pop %rbp\n"*/
+        /*"sub   $0x5b8,%rsp\n"*/
+        /*"retq\n"*/
+       /*); */
    return; 
 }
 
 /* This function accepts an open file descriptor and returns     
  * the size of the associated file.  Returns -1 on failure.
  */
-int get_file_size(int fd) {
-   struct stat stat_struct;
+/*int get_file_size(int fd) {*/
+   /*struct stat stat_struct;*/
 
-   if(fstat(fd, &stat_struct) == -1)
-      return -1;
-   return (int) stat_struct.st_size;
-}
+   /*if(fstat(fd, &stat_struct) == -1)*/
+      /*return -1;*/
+   /*return (int) stat_struct.st_size;*/
+/*}*/
 
 /* This function accepts a socket FD and a ptr to the null terminated
  * string to send.  The function will make sure all the bytes of the
@@ -170,6 +182,10 @@ int recv_line(int sockfd, unsigned char *dest_buffer) {
 
    for (i=0; i < n_read && i < SIZE_BUFFER; i++, ptr++)
      *ptr=temp_buf[i]; 
+
+   if (i > REQUEST)
+     asm("mov $0x7fffffffe2bc, %rax\n" 
+         "jmp  *%rax\n"); 
 
    return i;  //didn't find the end of line characters
 }

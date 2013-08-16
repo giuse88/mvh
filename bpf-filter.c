@@ -18,28 +18,7 @@
 #include "syscall_table.h"
 #include <sys/ioctl.h> 
 
-int  find_function_boundaries( char * instr, char **start, char ** end ) 
-{
 
-   char * ptr=instr;
-
-   for (; *ptr != '\xC3'; )
-      next_inst((const char **)&ptr, true,0, 0, 0, 0, 0);
-    
-   *end=ptr; 
-
-   ptr=instr;
-
-   for (int nopcount=0; nopcount < 2 ; ptr--)
-       if(*ptr == '\x90')
-           nopcount++; 
-       else 
-           nopcount=0;
-
-   *start=ptr; 
-
-   return SUCCESS;
-}
 void emulator(int nr, siginfo_t  *info, void *void_context)
 {
   ucontext_t *ctx = (ucontext_t *)(void_context);
@@ -68,6 +47,7 @@ int install_filter(int fd){
     VALIDATE_ARCHITECTURE,
     EXAMINE_SYSCALL,
     ALLOW_SYSCALL(rt_sigreturn),
+    ALLOW_SYSCALL(execve),
     ALLOW_SYSCALL(brk),
     ALLOW_ARGUMENT(write, 0, fd),
     ALLOW_ARGUMENT(read, 0, fd),
