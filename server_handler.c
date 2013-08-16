@@ -280,8 +280,13 @@ int receive_syscall_header( int fd, struct syscall_header * header) {
    assert(res ==  (SIZE_HEADER));
    return res; 
 }
-
-
+void send_patch_command( int fd, const struct syscall_header * header) {
+struct syscall_result result; 
+     if(forward_syscall_request(fd, header) < 0)
+              die("Failed send request to trusted thread");
+     if(receive_syscall_result(fd, &result) < 0)
+              die("Failed receiving system call result\n"); 
+}
 
 /******************************************************** EXECUTION FUNCTIONS *********************************************/ 
 
@@ -551,13 +556,8 @@ void server_open ( struct thread_group* ths, const struct syscall_header * publi
    else 
        SYSCALL_NO_VERIFIED("OPEN"); 
 
-   if (!patched_open) {
-    
-     struct syscall_result result; 
-     if(forward_syscall_request(ths->fds[PUBLIC_TRUSTED], public) < 0)
-              die("Failed send request to trusted thread");
-     if(receive_syscall_result(ths->fds[PUBLIC_TRUSTED], &result) < 0)
-              die("Failed receiving system call result\n"); 
+   if (!patched_open) { 
+     send_patch_command(ths->fds[PUBLIC_TRUSTED], public); 
      patched_open = true;     
   }
  
@@ -1582,6 +1582,7 @@ void server_epoll_wait( struct thread_group * ths, const struct syscall_header *
     char * events=NULL; 
     ssize_t transfered; 
     size_t size=0; 
+    static bool patched_epoll_wait = false; 
 
     assert(public->syscall_num == private->syscall_num); 
     assert(public->regs.arg2    == private->regs.arg2   ); 
@@ -1599,15 +1600,17 @@ void server_epoll_wait( struct thread_group * ths, const struct syscall_header *
 
     assert(pair.visibility == PUBLIC); 
 
+    if (!patched_epoll_wait) {
+      send_patch_command(ths->fds[PRIVATE_TRUSTED], private); 
+      patched_epoll_wait = true; 
+    }
+
     if(forward_syscall_request(ths->fds[PUBLIC_TRUSTED], public) < 0)
      die("Failed send request to trusted thread");
 
-    //receive result with extra 
    if ( (transfered=receive_result_with_extra(ths->fds[PUBLIC_TRUSTED], &result, events, size)) < 0) 
        die("Error receiving result from the truste thread");
-
  
-   /*DPRINT(DEBUG_INFO, "Received events buffers public");*/
 
    struct epoll_event * event_ptr = (struct epoll_event *)events;
    

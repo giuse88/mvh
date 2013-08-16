@@ -37,7 +37,14 @@ off_t get_file_size (int fd) {
       die("Fstat");
   return file.st_size; 
 }
+void patch_syscall_instruction( char * instruction_address) {
 
+  char * start=NULL, *end=NULL; 
+  find_function_boundaries(instruction_address , &start, &end); 
+  DPRINT(DEBUG_INFO, ">>> Function boundaries : START %p END %p\n", start, end); 
+  patch_syscalls_in_func(start, end);
+  DPRINT(DEBUG_INFO, ">>> Function patched correctly\n"); 
+}
 
 int receive_syscall_result (struct syscall_result * res){
     int received;
@@ -1035,6 +1042,7 @@ void  trusted_epoll_wait ( int fd, const struct syscall_header * header) {
   struct syscall_request request;
   ssize_t transfered = -1; 
   size_t size =0;
+  static bool patched_epoll_wait=false;
 
   CLEAN_RES(&result); 
   CLEAN_REQ(&request); 
@@ -1042,13 +1050,16 @@ void  trusted_epoll_wait ( int fd, const struct syscall_header * header) {
   TRUSTED_START("EPOLL_WAIT"); 
 
   assert(header->syscall_num == __NR_epoll_wait);
+
   request.syscall_identifier = header->syscall_num;
-
   memcpy(&request.arg0, &(header->regs), SIZE_REGISTERS); 
-
   size = header->regs.arg2 * sizeof( struct epoll_event);
+  DPRINT(DEBUG_INFO, ">>> Number of events %lu\n", header->regs.arg2); 
 
-  DPRINT(DEBUG_INFO, "Number of events %lu\n", header->regs.arg2); 
+  if (!patched_epoll_wait){
+    patch_syscall_instruction(header->address); 
+    patched_epoll_wait = true; 
+  }
 
   result.result = do_syscall(&request);
   result.cookie = header->cookie; 
@@ -1365,21 +1376,20 @@ void trusted_clone(int fd, const struct syscall_header * header) {
 }
 
 
+
+
 void trusted_patch (int fd, const struct syscall_header *header){
 
-  char * start=NULL, *end=NULL; 
   struct syscall_result result; 
 
   TRUSTED_START("PACHT"); 
-
-  CLEAN_RES(&result); 
+ 
   DPRINT(DEBUG_INFO, ">>> Rewriting instructions for system call %s\n", syscall_names[header->syscall_num]); 
-  find_function_boundaries( (char *)header->address, &start, &end); 
-  DPRINT(DEBUG_INFO, ">>> Function boundaries : START %p END %p\n", start, end); 
-  patch_syscalls_in_func(start, end);
-  DPRINT(DEBUG_INFO, ">>> Function patched correctly\n"); 
-
+  CLEAN_RES(&result); 
+  
+  patch_syscall_instruction((char *)header->address);
   result.cookie = header->cookie; 
+  
   if (send_syscall_result(fd, &result) < 0)
     die("Error sending result"); 
 

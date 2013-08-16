@@ -35,7 +35,7 @@ const struct policy public_policy[] = {
     { __NR_getdents,        untrusted_getdents,        NO_HANDLER}, 
     { __NR_mmap,            untrusted_mmap,            DEFAULT_TRUSTED},
     { __NR_write,           untrusted_write,           DEFAULT_TRUSTED}, 
-    { __NR_writev,           untrusted_writev,           DEFAULT_TRUSTED}, 
+    { __NR_writev,          untrusted_writev,          DEFAULT_TRUSTED}, 
     { __NR_read,            untrusted_read,            trusted_read   }, 
     { __NR_lseek,           DEFAULT_UNTRUSTED,         NO_HANDLER     },
     { __NR_ioctl,           untrusted_ioctl,           trusted_ioctl  }, 
@@ -87,9 +87,9 @@ const struct policy private_policy[] = {
     { __NR_accept,          untrusted_accept,          NO_HANDLER      },  
     { __NR_setsockopt,      untrusted_setsockopt,      NO_HANDLER      }, 
     { __NR_epoll_ctl,       untrusted_epoll_ctl,       NO_HANDLER      }, 
-    { __NR_epoll_wait,      untrusted_epoll_wait,      NO_HANDLER      }, 
+    { __NR_epoll_wait,      untrusted_epoll_wait,      trusted_patch     }, 
     { __NR_sendfile,        DEFAULT_UNTRUSTED,         trusted_sendfile_priv }, 
-    { __NR_clone,           untrusted_clone,            trusted_clone}, 
+    { __NR_clone,           untrusted_clone,           trusted_clone}, 
 };
  
 #endif /* end of include guard: POLICY_H */
