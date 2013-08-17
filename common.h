@@ -8,6 +8,10 @@
 #define __USE_GNU 1
 #include <ucontext.h>
 
+#ifdef PERFORMANCE
+  #include <sys/time.h>
+#endif
+
 #ifndef INTERNAL
   #define INTERNAL __attribute__((visibility("internal")))
 #endif

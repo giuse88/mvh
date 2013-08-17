@@ -8,7 +8,6 @@
 #include <termios.h>
 #include <sys/ioctl.h> 
 
-
 ssize_t receive_result_with_extra(int fd, struct syscall_result * result,  char * buf, size_t extra_size) { 
     
     int left = 0, transfered=0, temp=0, transfered_result=0; 
@@ -43,39 +42,96 @@ ssize_t receive_result_with_extra(int fd, struct syscall_result * result,  char 
 
     return transfered + transfered_result; 
 }
+
+ssize_t receive_result_with_extra_no_check(int fd, struct syscall_result * result,  char * buf, size_t extra_size) { 
+    
+    int left = 0, transfered=0, temp=0, transfered_result=0; 
+    struct iovec io[2];
+    struct msghdr msg; 
+    unsigned int update =0; 
+
+
+    CLEAN_RES(result);
+    memset((void*)&msg, 0, sizeof(msg));  
+
+    io[0].iov_base = result; 
+    io[0].iov_len = SIZE_RESULT; 
+
+    //read buffer
+    io[1].iov_base= buf;
+    io[1].iov_len = extra_size; 
+
+    msg.msg_iov=io; 
+    msg.msg_iovlen=2; 
+
+    left = extra_size;
+
+    do { 
+    temp = recvmsg(fd, &msg, 0);    
+      if ( temp < 0 && (errno==EAGAIN || errno == EINTR || errno == EWOULDBLOCK)) 
+        continue; 
+      else if ( temp < 0 )
+          die("Error sending result  (receive_result_with_extra_no_check)"); 
+      
+      left -= temp; 
+      transfered += temp; 
+      update = ((size_t)temp < io[0].iov_len) ? 0 : 1; 
+      
+      io[update].iov_len -= temp; 
+      io[update].iov_base += temp; 
+    
+     } while(left > 0); 
+
+    assert((size_t)transfered == extra_size + SIZE_RESULT);
+
+    return transfered + transfered_result; 
+}
+
 ssize_t send_result_with_extra(int fd, struct syscall_result * result, char * buf ,size_t extra_size) {
 
     int left = 0, transfered=0, temp=0, transfered_result =0; 
-    char * ptr = NULL; 
+    struct iovec io[2];
+    struct msghdr msg; 
+    unsigned int update =0; 
 
-
+    
     result->extra = extra_size; 
-    // send  struct result 
-    ASYNC_CALL(write(fd, result, SIZE_RESULT), transfered_result);
-    assert(transfered_result == SIZE_RESULT); 
-   
-    //read buffer
-    left = extra_size;
-    ptr = buf;
+    
+    memset((void*)&msg, 0, sizeof(msg));  
+    
+    io[0].iov_base = result; 
+    io[0].iov_len = SIZE_RESULT; 
 
-        do { 
-    /*fprintf(stderr,"%d\n", left);*/
-      temp = write(fd,ptr,left);       
-    /*fprintf(stderr,"%d %d\n", left, temp);*/
+    //read buffer
+    io[1].iov_base= buf;
+    io[1].iov_len = extra_size; 
+
+    msg.msg_iov=io; 
+    msg.msg_iovlen=2; 
+   
+    left = extra_size; 
+    
+    do { 
+    temp = sendmsg(fd, &msg, 0);    
       if ( temp < 0 && (errno==EAGAIN || errno == EINTR || errno == EWOULDBLOCK)) 
         continue; 
       else if ( temp < 0 )
           die("Error sending result  (send_result_with_extra)"); 
+      
       left -= temp; 
-      ptr   += temp; 
       transfered += temp; 
-      /*fprintf(stderr,"%d\n", left);*/
-    } while(left > 0); 
+      update = ((size_t)temp < io[0].iov_len) ? 0 : 1; 
 
-    assert((size_t)transfered == extra_size);
+      io[update].iov_len -= temp; 
+      io[update].iov_base += temp; 
+    
+     } while(left > 0); 
+
+    assert((size_t)transfered == extra_size + SIZE_RESULT);
 
     return transfered + transfered_result; 
 }
+
 ssize_t receive_extra(int fd , char * buf, size_t size){
  
     int left = 0, transfered=0, temp=0; 
@@ -115,6 +171,7 @@ ssize_t receive_extra(int fd , char * buf, size_t size){
     return transfered; 
 
 } 
+
 ssize_t send_extra  (int fd, char * buf, size_t size) {
 
     int left = 0, transfered=0, temp=0; 
@@ -139,6 +196,7 @@ ssize_t send_extra  (int fd, char * buf, size_t size) {
     assert(transfered == (int)size);
     return transfered; 
 } 
+
 ssize_t get_extra_arguments( int pub_fd , char* pub_buf, int priv_fd, char * priv_buf, size_t size){
     ssize_t received =0; 
 
@@ -153,6 +211,7 @@ ssize_t get_extra_arguments( int pub_fd , char* pub_buf, int priv_fd, char * pri
     
     return received; 
 }
+
 size_t get_size_from_cmd(int request) { 
   // ugly 
   switch (request) {

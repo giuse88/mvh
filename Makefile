@@ -1,7 +1,7 @@
 CC=gcc 
 CFLAGS = -g -std=gnu99 -O0 -Wall -Wextra -Wno-missing-field-initializers  \
 				 -Wno-unused-parameter -I. -fno-stack-protector -z execstack 
-DEBUG= -DCOLOR -DPERFORMANCE  # -DDEBUG 
+DEBUG= -DCOLOR -DPERFORMANCE  -DDEBUG 
 LDFLAGS=-ldl -g -lpthread  
 PWD=`pwd`
 LIB=

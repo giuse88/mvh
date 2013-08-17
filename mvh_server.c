@@ -118,8 +118,6 @@ void  * handle_thread_pair(void * arg) {
 
    // int res =-1; 
     bool is_timer_set = false; 
-   // uint64_t num_expirations =0,
-     uint64_t t1=0, t2 =0; 
     struct thread_group * ths = (struct thread_group *)arg; 
 
     ths->fds[PUBLIC_TRUSTED]     = ths->public.trusted_fd; 
@@ -221,7 +219,7 @@ void  * handle_thread_pair(void * arg) {
    if ( !pub_req /*&& <][>ths->pollfds[PUBLIC_UNTRUSTED].revents*/) {
         pub_req = true; 
         receive_syscall_header(ths->fds[PUBLIC_UNTRUSTED], &public_header); 
-        DPRINT(DEBUG_INFO, "%lu Received request %d from %d for system call < %s > over %d\n", (t1=timestamp()),
+        DPRINT(DEBUG_INFO, "%lu Received request %d from %d for system call < %s > over %d\n", timestamp(),
                public_header.cookie, ths->public.untrusted.tid, 
                syscall_names[public_header.syscall_num], ths->fds[PUBLIC_UNTRUSTED]);
         is_timer_set = handle_timer(ths->timer, is_timer_set); 
@@ -231,7 +229,7 @@ void  * handle_thread_pair(void * arg) {
    if (!priv_req /*&& ths->pollfds[PRIVATE_UNTRUSTED].revents*/) {
         priv_req = true; 
         receive_syscall_header(ths->fds[PRIVATE_UNTRUSTED], &private_header); 
-        DPRINT(DEBUG_INFO, "%lu Received request %d from %d for system call < %s > over %d\n", (t2=timestamp()), 
+        DPRINT(DEBUG_INFO, "%lu Received request %d from %d for system call < %s > over %d\n", timestamp(), 
                 private_header.cookie, ths->private.untrusted.tid, 
                 syscall_names[private_header.syscall_num], ths->fds[PRIVATE_UNTRUSTED]);
         is_timer_set = handle_timer(ths->timer, is_timer_set); 

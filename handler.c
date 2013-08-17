@@ -109,7 +109,7 @@ ssize_t send_syscall_header_with_extra(const ucontext_t * uc, int extra, char * 
 
     struct syscall_header header; 
     int fd = get_local_fd();
-    int sent=-1; 
+    ssize_t sent=-1; 
     struct iovec io[2];
     struct msghdr msg; 
   
@@ -137,7 +137,7 @@ ssize_t send_syscall_header_with_extra(const ucontext_t * uc, int extra, char * 
     if( sent < 0)
        die("Error sending registers");
 
-   assert(sent ==  (SIZE_HEADER) + size);
+   assert((size_t)sent ==  (SIZE_HEADER) + size);
   
    return sent; 
 }
@@ -171,12 +171,13 @@ ssize_t send_syscall_result(int fd, struct syscall_result * res) {
  **********************************************************************/
 u64_t untrusted_default(const ucontext_t *ctx ){
    
-    int syscall_num = -1; 
     struct syscall_result result;
     u64_t extra = 0;  
-   
+#ifdef DEBUG 
+    int syscall_num = -1; 
     syscall_num = ctx->uc_mcontext.gregs[REG_SYSCALL]; 
-    
+#endif 
+
     DPRINT(DEBUG_INFO, "DEFAULT Start untrusted handler for < %s > \n", syscall_names[syscall_num]);
    
     if (send_syscall_header(ctx, extra) < 0)
@@ -214,6 +215,17 @@ void trusted_default (int fd, const struct syscall_header *header){
 }
 void no_handler (int fd, const struct syscall_header *header){
   die("No handler has been called"); 
+}
+
+void elapsed_time(struct timeval * time1 ) {
+
+  double elapsedTime =0; 
+  struct timeval time2; 
+  
+  gettimeofday(&time2, NULL);
+  elapsedTime = (time2.tv_sec - time1->tv_sec) * 1000.0;      // sec to ms
+  elapsedTime += (time2.tv_usec - time1->tv_usec) / 1000.0;   // us to ms
+  DPRINT(DEBUG_INFO, "Untrusted elapsed ms\n"); 
 }
 
 
@@ -272,11 +284,8 @@ u64_t untrusted_open(const ucontext_t * uc ){
    u64_t extra =0;  
 
 #ifdef PERFORMANCE 
-  struct timeval time1, time2;
-  double elapsedTime;
-  struct timeval time3, time4;
-  gettimeofday(&time1, NULL);    
-  gettimeofday(&time3, NULL);    
+  struct timeval time; 
+  gettimeofday(&time, NULL);    
 #endif 
 
    UNTRUSTED_START("OPEN"); 
@@ -288,14 +297,7 @@ u64_t untrusted_open(const ucontext_t * uc ){
    if (send_syscall_header_with_extra(uc, extra, path, path_length)< 0)
        die("Send syscall header"); 
 
-#ifdef PERFORMANCE 
-  gettimeofday(&time4, NULL);
-  elapsedTime = (time4.tv_sec - time3.tv_sec) * 1000.0;      // sec to ms
-  elapsedTime += (time4.tv_usec - time3.tv_usec) / 1000.0;   // us to ms
-  DPRINT(DEBUG_ALL, "Arguments elapsed : %lf ms\n", elapsedTime); 
-#endif 
-
-  if(receive_syscall_result(&result) < 0 )
+ if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result(OPEN)"); 
  
   DPRINT(DEBUG_INFO, "OPEN(\"%s\"(%d),0x%X)=%d\n", path, path_length,
@@ -304,16 +306,12 @@ u64_t untrusted_open(const ucontext_t * uc ){
   UNTRUSTED_END("OPEN"); 
 
 #ifdef PERFORMANCE 
-  gettimeofday(&time2, NULL);
-  elapsedTime = (time2.tv_sec - time1.tv_sec) * 1000.0;      // sec to ms
-  elapsedTime += (time2.tv_usec - time1.tv_usec) / 1000.0;   // us to ms
-  DPRINT(DEBUG_ALL, "Untrusted elapsed : %lf ms\n", elapsedTime); 
+  elapsed_time(&time); 
 #endif 
-
-
 
   return (u64_t)result.result; 
 }
+
 void trusted_open (int fd, const struct syscall_header *header){
 
   struct syscall_result result; 
@@ -353,15 +351,12 @@ void trusted_open (int fd, const struct syscall_header *header){
   gettimeofday(&time2, NULL);
   elapsedTime = (time2.tv_sec - time1.tv_sec) * 1000.0;      // sec to ms
   elapsedTime += (time2.tv_usec - time1.tv_usec) / 1000.0;   // us to ms
-  DPRINT(DEBUG_INFO, " Trusted time Elapsed : %lf ms\n", elapsedTime); 
+//  DPRINT(DEBUG_INFO, " Trusted time Elapsed : %lf ms\n", elapsedTime); 
 #endif 
 
 
   TRUSTED_END("OPEN"); 
 }
-
-
-
 
 u64_t untrusted_fstat(const ucontext_t * uc ){
 
@@ -548,16 +543,11 @@ u64_t untrusted_openat(const ucontext_t * uc ){
    int path_length = -1; 
    char * path = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
    u64_t extra =0;  
-   int sent =-1; 
-   struct iovec io[1];
-   struct msghdr msg; 
 
    UNTRUSTED_START("OPENAT"); 
   
-   memset(&msg, 0, sizeof(msg));
    memset(&result, 0, SIZE_RESULT); 
 
-   // the compiler should ensure there is a null after the last character
    path_length = strlen(path) + 1;
    extra = path_length; 
   
@@ -641,7 +631,6 @@ u64_t untrusted_write(const ucontext_t * uc ){
    char * buf = NULL;  
    size_t size =0; 
    u64_t extra =0; 
-   ssize_t transfered = -1; 
 
    UNTRUSTED_START("WRITE");
 
@@ -656,8 +645,6 @@ u64_t untrusted_write(const ucontext_t * uc ){
    if (send_syscall_header_with_extra(uc, extra, buf, size)< 0)
       die("Send syscall header"); 
   
-   /*DPRINT(DEBUG_INFO, "Sent data %ld", transfered); */
-
    if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result"); 
 
@@ -991,14 +978,9 @@ u64_t untrusted_setsockopt(const ucontext_t * uc ){
    size  = uc->uc_mcontext.gregs[REG_ARG4];
    extra = size; 
   
-   if (send_syscall_header(uc, extra)< 0)
+   if (send_syscall_header_with_extra(uc, extra, buf,size)< 0)
       die("Send syscall header"); 
   
-   if (send_extra(get_local_fd(), buf, size) < 0) 
-       die("Failed send extra (Untrudted write)"); 
-  
-   DPRINT(DEBUG_INFO, "Sent data"); 
-
    if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result"); 
 
@@ -1021,11 +1003,8 @@ u64_t untrusted_bind(const ucontext_t * uc ){
    size  = uc->uc_mcontext.gregs[REG_ARG2];
    extra = size; 
   
-   if (send_syscall_header(uc, extra)< 0)
+   if (send_syscall_header_with_extra(uc, extra, buf, size)< 0)
       die("Send syscall header"); 
-  
-   if (send_extra(get_local_fd(), buf, size) < 0) 
-       die("Failed send extra (Untrudted write)"); 
   
    if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result"); 
@@ -1049,11 +1028,8 @@ u64_t untrusted_epoll_ctl(const ucontext_t * uc ){
    size  = sizeof(struct epoll_event);
    extra = size; 
   
-   if (send_syscall_header(uc, extra)< 0)
+   if (send_syscall_header_with_extra(uc, extra, buf, size)< 0)
       die("Send syscall header"); 
-  
-   if (send_extra(get_local_fd(), buf, size) < 0) 
-       die("Failed send extra (Untrudted write)"); 
   
    if(receive_syscall_result(&result) < 0 )
        die("failede get_syscall_result"); 
@@ -1087,7 +1063,7 @@ u64_t untrusted_epoll_wait(const ucontext_t * uc ){
    if (send_syscall_header(uc, extra)< 0)
       die("Send syscall header"); 
   
-   transfered= receive_result_with_extra(fd, &res, buf, size); 
+   transfered= receive_result_with_extra_no_check(fd, &res, buf, size); 
    if ( transfered < 0) 
       die("Recvmsg failed result stat"); 
 
@@ -1119,7 +1095,7 @@ void  trusted_epoll_wait ( int fd, const struct syscall_header * header) {
   DPRINT(DEBUG_INFO, ">>> Number of events %lu\n", header->regs.arg2); 
 
   if (!patched_epoll_wait){
-    patch_syscall_instruction(header->address); 
+    patch_syscall_instruction((char *)header->address); 
     patched_epoll_wait = true; 
   }
 
@@ -1154,13 +1130,15 @@ u64_t untrusted_accept(const ucontext_t * uc ){
    size  = sizeof(socklen_t);
    extra = (buf != NULL) ? size : 0; 
   
-   if (send_syscall_header(uc, extra)< 0)
-      die("Send syscall header"); 
- 
+
    if (buf != NULL ) {
-   if (send_extra(fd, buf, size) < 0) 
-     die("Failed send extra (Untrudted write)"); 
-   }
+      if (send_syscall_header_with_extra(uc, extra, buf, size)< 0)
+           die("Failed send extra (Untrudted accept)"); 
+   } else {
+      if (send_syscall_header(uc, extra)< 0)
+           die("Send syscall header"); 
+  }
+  
    if(receive_syscall_result(&res) < 0 )
        die("failede get_syscall_result"); 
    assert( cookie == (u64_t)res.cookie);
@@ -1392,8 +1370,9 @@ u64_t untrusted_clone ( const ucontext_t * context) {
 }
 
 static void return_from_clone_syscall(void *stack) {
-
-struct ucontext * uc =  (struct ucontext * ) stack; 
+#ifdef DEBUG 
+ struct ucontext * uc =  (struct ucontext * ) stack;
+#endif 
  DPRINT(DEBUG_INFO, "Clone handler, installed new stack frame at %p, RIP = 0x%lx\n", stack, (long) uc->uc_mcontext.gregs[REG_RIP]); 
  asm volatile ( "mov %0, %%rsp\n"
                 "mov $15, %%rax\n"
@@ -1436,9 +1415,6 @@ void trusted_clone(int fd, const struct syscall_header * header) {
   TRUSTED_END("CLONE"); 
 
 }
-
-
-
 
 void trusted_patch (int fd, const struct syscall_header *header){
 

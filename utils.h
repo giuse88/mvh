@@ -14,7 +14,10 @@ ssize_t receive_result_with_extra (int, struct syscall_result *, char *, size_t)
 ssize_t send_result_with_extra    (int, struct syscall_result *, char *, size_t); 
 ssize_t receive_extra(int , char * , size_t ); 
 ssize_t send_extra   (int , char * , size_t); 
-ssize_t    get_extra_arguments( int, char*, int, char *, size_t); 
+ssize_t get_extra_arguments( int, char*, int, char *, size_t); 
 size_t  get_size_from_cmd(int request);
+ssize_t receive_result_with_extra_no_check(int fd, struct syscall_result * result,  char * buf, size_t extra_size); 
+
 
 #endif /* end of include guard: UTILS_H */
+

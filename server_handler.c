@@ -563,6 +563,7 @@ void server_open ( struct thread_group* ths, const struct syscall_header * publi
   DPRINT(DEBUG_ALL, "Arguments elapsed : %lf ms\n", elapsedTime); 
 #endif 
 
+
   if (!strncmp(private_path, public_path, length) &&
        public->regs.arg1 == private->regs.arg1)
        SYSCALL_VERIFIED("OPEN"); 
