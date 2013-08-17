@@ -81,6 +81,13 @@ ssize_t receive_extra(int fd , char * buf, size_t size){
     int left = 0, transfered=0, temp=0; 
     char * ptr = NULL; 
 
+#ifdef PERFORMANCE 
+  struct timeval time1, time2;
+  double elapsedTime = 0; 
+  gettimeofday(&time1, NULL);    
+#endif 
+
+
     left = size;
     ptr = buf;
 
@@ -96,6 +103,15 @@ ssize_t receive_extra(int fd , char * buf, size_t size){
     } while(left > 0); 
 
     assert(transfered == (int)size);
+ 
+#ifdef PERFORMANCE 
+  gettimeofday(&time2, NULL);
+  elapsedTime = (time2.tv_sec - time1.tv_sec) * 1000.0;      // sec to ms
+  elapsedTime += (time2.tv_usec - time1.tv_usec) / 1000.0;   // us to ms
+  DPRINT(DEBUG_ALL, " %d Extra elapsed : %lf ms\n",fd,  elapsedTime); 
+#endif 
+
+ 
     return transfered; 
 
 } 
@@ -126,13 +142,15 @@ ssize_t send_extra  (int fd, char * buf, size_t size) {
 ssize_t get_extra_arguments( int pub_fd , char* pub_buf, int priv_fd, char * priv_buf, size_t size){
     ssize_t received =0; 
 
+   if ((received =receive_extra(priv_fd, priv_buf,size)) < 0)
+          die("Failed receiveing extra argument from private application"); 
+    assert((size_t)received == size);
+    received=0; 
     if ((received=receive_extra(pub_fd, pub_buf,size)) < 0)
           die("Failed receiveing extra argument from public application"); 
     assert((size_t)received == size);
-    received=0; 
-    if ((received =receive_extra(priv_fd, priv_buf,size)) < 0)
-          die("Failed receiveing extra argument from private application"); 
-    assert((size_t)received == size);
+    
+    
     return received; 
 }
 size_t get_size_from_cmd(int request) { 

@@ -13,7 +13,7 @@ int main(int argc, const char *argv[])
     const char * file = "/home/giuseppe/test.c";
     int fd; 
 
-    for ( int i=0; i < 5; i++) {
+    for ( int i=0; i < 7; i++) {
 
     // start timer
     gettimeofday(&t1, NULL);

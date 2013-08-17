@@ -169,17 +169,33 @@ void  * handle_thread_pair(void * arg) {
         DPRINT(DEBUG_INFO, "Received an header pair\n");
        // we must call the handler 
         if ( private_header.syscall_num ==  public_header.syscall_num) {
-        int syscall_num = private_header.syscall_num; 
-        syscall_table_server_[syscall_num].handler(ths, &public_header, &private_header); 
-        } else {
-          attack_dectected(ths, &public_header, &private_header); 
-        }
 
-        CLEAN_HEA(&public_header);
-        CLEAN_HEA(&private_header);
-        pub_req    =false; 
-        priv_req   =false; 
-        DPRINT(DEBUG_INFO, "Back to main server function \n");
+#ifdef PERFORMANCE 
+          struct timeval time1, time2;
+          double elapsedTime;
+          gettimeofday(&time1, NULL);    
+#endif 
+
+          int syscall_num = private_header.syscall_num; 
+          syscall_table_server_[syscall_num].handler(ths, &public_header, &private_header); 
+
+#ifdef PERFORMANCE 
+          gettimeofday(&time2, NULL);
+          elapsedTime = (time2.tv_sec - time1.tv_sec) * 1000.0;      // sec to ms
+          elapsedTime += (time2.tv_usec - time1.tv_usec) / 1000.0;   // us to ms
+          printf("Elapsed : %lf ms\n", elapsedTime); 
+#endif 
+
+          } else {
+            attack_dectected(ths, &public_header, &private_header); 
+          }
+
+          CLEAN_HEA(&public_header);
+          CLEAN_HEA(&private_header);
+          pub_req    =false; 
+          priv_req   =false; 
+
+       DPRINT(DEBUG_INFO, "Back to main server function \n");
     }
  
     /* 

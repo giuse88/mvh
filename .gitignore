@@ -31,3 +31,7 @@ mremote_shellcode
 shellcode
 tinyweb
 tinyweb_vuln
+
+#Folders
+result/*
+

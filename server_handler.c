@@ -547,10 +547,23 @@ void server_open ( struct thread_group* ths, const struct syscall_header * publi
    public_path = calloc(length, 1); 
    private_path = calloc(length, 1); 
 
+#ifdef PERFORMANCE 
+  struct timeval time1, time2;
+  double elapsedTime = 0; 
+  gettimeofday(&time1, NULL);    
+#endif 
+
    transfered = get_extra_arguments(ths->fds[PUBLIC_UNTRUSTED],public_path,
                   ths->fds[PRIVATE_UNTRUSTED], private_path, length);
-   
-   if (!strncmp(private_path, public_path, length) &&
+
+#ifdef PERFORMANCE 
+  gettimeofday(&time2, NULL);
+  elapsedTime = (time2.tv_sec - time1.tv_sec) * 1000.0;      // sec to ms
+  elapsedTime += (time2.tv_usec - time1.tv_usec) / 1000.0;   // us to ms
+  DPRINT(DEBUG_ALL, "Arguments elapsed : %lf ms\n", elapsedTime); 
+#endif 
+
+  if (!strncmp(private_path, public_path, length) &&
        public->regs.arg1 == private->regs.arg1)
        SYSCALL_VERIFIED("OPEN"); 
    else 
@@ -561,8 +574,20 @@ void server_open ( struct thread_group* ths, const struct syscall_header * publi
      patched_open = true;     
   }
  
+#ifdef PERFORMANCE 
+  struct timeval time3, time4;
+  gettimeofday(&time3, NULL);    
+#endif 
+
   execution_single_variant_result_fd(ths, private,&result, FILE_FD, PRIVATE);  
-  
+
+#ifdef PERFORMANCE 
+  gettimeofday(&time4, NULL);
+  elapsedTime = (time4.tv_sec - time3.tv_sec) * 1000.0;      // sec to ms
+  elapsedTime += (time4.tv_usec - time3.tv_usec) / 1000.0;   // us to ms
+  DPRINT(DEBUG_ALL, "Execution  elapsed : %lf ms\n", elapsedTime); 
+#endif 
+
   assert( (int)result.result == get_private_fd(ths, get_public_fd(ths, result.result, PRIVATE), PRIVATE)); 
 
   printf("[ PUBLIC  ] open(\"%s\"(%ld), 0x%lX) = %d\n", public_path,  transfered, public->regs.arg1 ,get_public_fd(ths, result.result, PRIVATE)); 

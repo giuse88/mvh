@@ -60,6 +60,7 @@ int receive_syscall_result (struct syscall_result * res){
 
     return received; 
 }
+
 void set_reg (struct syscall_registers * reg, const ucontext_t * ctx) {
    memset(reg, 0, SIZE_REGISTERS); 
    reg->arg0 = ctx->uc_mcontext.gregs[REG_ARG0]; 
@@ -69,6 +70,7 @@ void set_reg (struct syscall_registers * reg, const ucontext_t * ctx) {
    reg->arg4 = ctx->uc_mcontext.gregs[REG_ARG4];
    reg->arg5 = ctx->uc_mcontext.gregs[REG_ARG5]; 
 }
+
 ssize_t send_syscall_header(const ucontext_t * uc, int extra) { 
 
     struct syscall_header header; 
@@ -102,6 +104,44 @@ ssize_t send_syscall_header(const ucontext_t * uc, int extra) {
   
    return sent; 
 }
+
+ssize_t send_syscall_header_with_extra(const ucontext_t * uc, int extra, char * buf, size_t size) { 
+
+    struct syscall_header header; 
+    int fd = get_local_fd();
+    int sent=-1; 
+    struct iovec io[2];
+    struct msghdr msg; 
+  
+    memset(&header, 0, sizeof(header)); 
+    memset((void*)&msg, 0, sizeof(msg));  
+    
+    // set header 
+    header.syscall_num = uc->uc_mcontext.gregs[REG_SYSCALL]; 
+    header.address = uc->uc_mcontext.gregs[REG_PC]; 
+    header.cookie  = get_local_tid(); 
+    header.extra   = extra; 
+    set_reg(&(header.regs), uc);
+    
+    io[0].iov_base = &header; 
+    io[0].iov_len = SIZE_HEADER; 
+
+    io[1].iov_base= buf;
+    io[1].iov_len = size; 
+
+    msg.msg_iov=io; 
+    msg.msg_iovlen=2; 
+   
+    sent = sendmsg(fd, &msg, 0);
+  
+    if( sent < 0)
+       die("Error sending registers");
+
+   assert(sent ==  (SIZE_HEADER) + size);
+  
+   return sent; 
+}
+
 ssize_t send_syscall_result(int fd, struct syscall_result * res) {
  
   struct iovec io[1];
@@ -231,19 +271,30 @@ u64_t untrusted_open(const ucontext_t * uc ){
    char * path = (char *)uc->uc_mcontext.gregs[REG_ARG0]; 
    u64_t extra =0;  
 
+#ifdef PERFORMANCE 
+  struct timeval time1, time2;
+  double elapsedTime;
+  struct timeval time3, time4;
+  gettimeofday(&time1, NULL);    
+  gettimeofday(&time3, NULL);    
+#endif 
+
    UNTRUSTED_START("OPEN"); 
-   
    CLEAN_RES(&result); 
 
    path_length = strlen(path) + 1;
    extra = path_length; 
 
-   if (send_syscall_header(uc, extra)< 0)
+   if (send_syscall_header_with_extra(uc, extra, path, path_length)< 0)
        die("Send syscall header"); 
 
-  if (send_extra(get_local_fd(), path, path_length) < 0) 
-       die("Failed send extra (OPEN)"); 
-  
+#ifdef PERFORMANCE 
+  gettimeofday(&time4, NULL);
+  elapsedTime = (time4.tv_sec - time3.tv_sec) * 1000.0;      // sec to ms
+  elapsedTime += (time4.tv_usec - time3.tv_usec) / 1000.0;   // us to ms
+  DPRINT(DEBUG_ALL, "Arguments elapsed : %lf ms\n", elapsedTime); 
+#endif 
+
   if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result(OPEN)"); 
  
@@ -251,6 +302,15 @@ u64_t untrusted_open(const ucontext_t * uc ){
      (unsigned int)  uc->uc_mcontext.gregs[REG_ARG1], (int)result.result); 
 
   UNTRUSTED_END("OPEN"); 
+
+#ifdef PERFORMANCE 
+  gettimeofday(&time2, NULL);
+  elapsedTime = (time2.tv_sec - time1.tv_sec) * 1000.0;      // sec to ms
+  elapsedTime += (time2.tv_usec - time1.tv_usec) / 1000.0;   // us to ms
+  DPRINT(DEBUG_ALL, "Untrusted elapsed : %lf ms\n", elapsedTime); 
+#endif 
+
+
 
   return (u64_t)result.result; 
 }
@@ -260,6 +320,13 @@ void trusted_open (int fd, const struct syscall_header *header){
   struct syscall_request request;
   static bool patched =false; 
   char *start =NULL, *end =NULL; 
+
+#ifdef PERFORMANCE 
+  struct timeval time1, time2;
+  double elapsedTime;
+  gettimeofday(&time1, NULL);    
+#endif 
+
 
   memset(&result, 0, sizeof(result)); 
   memset(&request, 0, sizeof(request)); 
@@ -281,6 +348,14 @@ void trusted_open (int fd, const struct syscall_header *header){
   result.cookie = header->cookie; 
   result.extra = 0; 
   send_syscall_result(fd, &result); 
+
+#ifdef PERFORMANCE 
+  gettimeofday(&time2, NULL);
+  elapsedTime = (time2.tv_sec - time1.tv_sec) * 1000.0;      // sec to ms
+  elapsedTime += (time2.tv_usec - time1.tv_usec) / 1000.0;   // us to ms
+  DPRINT(DEBUG_INFO, " Trusted time Elapsed : %lf ms\n", elapsedTime); 
+#endif 
+
 
   TRUSTED_END("OPEN"); 
 }
@@ -486,19 +561,9 @@ u64_t untrusted_openat(const ucontext_t * uc ){
    path_length = strlen(path) + 1;
    extra = path_length; 
   
-   if (send_syscall_header(uc, extra)< 0)
-      die("Send syscall header"); 
-  
-   // file path 
-   io[0].iov_len=path_length; 
-   io[0].iov_base = (char *)path; 
+   if (send_syscall_header_with_extra(uc, extra, path, path_length)< 0)
+       die("Send syscall header"); 
 
-   msg.msg_iov=io; 
-   msg.msg_iovlen=1; 
-
-   sent = sendmsg(get_local_fd(), &msg, 0); 
-   assert(sent ==  path_length);
-  
    if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result"); 
 
@@ -588,13 +653,10 @@ u64_t untrusted_write(const ucontext_t * uc ){
  
    DPRINT(DEBUG_INFO, " write(%d, %s, %lu)\n", (int)uc->uc_mcontext.gregs[REG_ARG0], buf, size); 
 
-   if (send_syscall_header(uc, extra)< 0)
+   if (send_syscall_header_with_extra(uc, extra, buf, size)< 0)
       die("Send syscall header"); 
   
-   if ( (transfered = send_extra(get_local_fd(), buf, size)) < 0) 
-       die("Failed send extra (Untrudted write)"); 
-  
-   DPRINT(DEBUG_INFO, "Sent data %ld", transfered); 
+   /*DPRINT(DEBUG_INFO, "Sent data %ld", transfered); */
 
    if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result"); 

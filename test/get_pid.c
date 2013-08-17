@@ -17,7 +17,7 @@ int main(int argc, const char *argv[])
     /*puts(buf); */
     
   
-    for (int i =0; i < 5 ; i++) {
+    /*for (int i =0; i < 5 ; i++) {*/
       
     gettimeofday(&t1, NULL);
       asm("movq $39, %rax\n"
@@ -29,7 +29,7 @@ int main(int argc, const char *argv[])
     elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
     printf("Elapsed : %lf ms\n", elapsedTime); 
  
-    }
+    /*}*/
 
   return 0;
 }
