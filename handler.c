@@ -1179,35 +1179,63 @@ void  trusted_accept   ( int fd, const struct syscall_header * header) {
 u64_t untrusted_writev(const ucontext_t * uc) {
 
    struct syscall_result result; 
+   struct syscall_header header; 
    char * buf = NULL;  
    size_t size =0; 
    u64_t extra =0;  
    int fd =  get_local_fd();
    ssize_t transfered =-1; 
-
-   UNTRUSTED_START("WRITE");
-   CLEAN_RES(&result); 
+   int iovec_num      = (int) uc->uc_mcontext.gregs[REG_ARG2] + 2; 
+   struct iovec  *io = calloc(iovec_num, sizeof (struct iovec));
+   struct msghdr msg; 
+   
+   UNTRUSTED_START("WRITEV");
+   
+   memset(&header, 0, sizeof(header)); 
+   memset((void*)&msg, 0, sizeof(msg));  
+   CLEAN_RES(&result);
+   CLEAN_HEA(&header); 
 
    buf = (char *)uc->uc_mcontext.gregs[REG_ARG1]; 
    size  = uc->uc_mcontext.gregs[REG_ARG2] * sizeof ( struct iovec);
    extra = size; 
-  
-   if (send_syscall_header(uc, extra)< 0)
-      die("Send syscall header"); 
  
-   // send iovec structures 
-   if (send_extra(fd, buf, size) < 0) 
-       die("Failed send extra (Untrudted writev)"); 
+   // set header 
+   header.syscall_num = uc->uc_mcontext.gregs[REG_SYSCALL]; 
+   header.address = uc->uc_mcontext.gregs[REG_PC]; 
+   header.cookie  = get_local_tid(); 
+   header.extra   = extra; 
+   set_reg(&(header.regs), uc);
    
-   DPRINT(DEBUG_INFO, "--- Sent iovec structures %ld\n", size); 
-      // send data via wrivev
-   struct iovec  *iov = ( struct iovec *) uc->uc_mcontext.gregs[REG_ARG1];
-   int iovec_num      = (int) uc->uc_mcontext.gregs[REG_ARG2]; 
+   // system call header
+   io[0].iov_base = &header; 
+   io[0].iov_len = SIZE_HEADER; 
 
-   if ( (transfered = writev(fd, iov, iovec_num)) < 0 )
-      die("WRITEV untrusted"); 
+   //iovec strcutures 
+   io[1].iov_base= buf;
+   io[1].iov_len = size; 
 
-   DPRINT(DEBUG_INFO, "--- Writev sent %ld\n", transfered); 
+   memcpy(io +2, ( struct iovec *) uc->uc_mcontext.gregs[REG_ARG1], sizeof( struct iovec) * (iovec_num -2)); 
+
+   msg.msg_iov=io; 
+   msg.msg_iovlen=iovec_num; 
+   
+   transfered = sendmsg(fd, &msg, 0);
+  
+    if( transfered < 0)
+       die("Error sending registers");
+
+  /* assert((size_t)sent ==  (SIZE_HEADER) + size);*/
+   
+   /*if (send_syscall_header_with_extra(uc, extra, buf,size)< 0)*/
+      /*die("Send syscall header"); */
+ 
+   /*DPRINT(DEBUG_INFO, "--- Sent iovec structures %ld\n", size); */
+      /*// send data via wrivev*/
+      /*if ( (transfered = writev(fd, iov, iovec_num)) < 0 )*/
+      /*die("WRITEV untrusted"); */
+
+   /*DPRINT(DEBUG_INFO, "--- Writev sent %ld\n", transfered); */
 
    if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result"); 
