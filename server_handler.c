@@ -1899,6 +1899,11 @@ void server_sendfile( struct thread_group * ths, const struct syscall_header * p
 
     DPRINT(DEBUG_INFO, "SENDFILE SYSTEM CALL\n"); 
 
+#ifdef PERFORMANCE 
+  struct timeval time1;
+  gettimeofday(&time1, NULL);    
+#endif 
+    
     assert( public->syscall_num == __NR_sendfile && private->syscall_num == __NR_sendfile); 
     assert ( public->regs.arg3 == private->regs.arg3); 
 
@@ -1915,41 +1920,54 @@ void server_sendfile( struct thread_group * ths, const struct syscall_header * p
         SYSCALL_NO_VERIFIED("SENDFILE"); 
 
     if ( out_pair.visibility == PUBLIC)  {
+        
+      if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
+            die("Failed send request to trusted thread");
 
-        if(forward_syscall_request(ths->fds[PRIVATE_TRUSTED], private) < 0)
-            die("Failed send request to trusted thread");
-      
-        if(forward_syscall_request(ths->fds[PUBLIC_TRUSTED], public) < 0)
-            die("Failed send request to trusted thread");
-      
-        if((transfered = receive_extra(ths->fds[PRIVATE_TRUSTED], buffer, size)) < 0)
+#ifdef PERFORMANCE 
+  elapsed_time("Forward system call to private", &time1); 
+#endif 
+        // receive file from the private version 
+        if((transfered = receive_result_with_extra(ths->fds[PRIVATE_TRUSTED], &private_result,  buffer, size)) < 0)
             die("Failed receive result trusted thread");
 
-        assert( (size_t)transfered == size); 
-
-
-        if(receive_syscall_result(ths->fds[PRIVATE_TRUSTED], &private_result) < 0)
-          die("Receiving result"); 
-
+#ifdef PERFORMANCE 
+  elapsed_time("Receive file from private", &time1); 
+#endif 
        DPRINT(DEBUG_INFO, "Received file from the private variant\n"); 
        
-       if((transfered = send_extra(ths->fds[PUBLIC_TRUSTED], buffer, size)) < 0)
-            die("Failed receive result trusted thread");
+       if(forward_syscall_request_with_extra(ths->fds[PUBLIC_TRUSTED], public, buffer, size) < 0)
+            die("Failed send request to trusted thread");
 
+#ifdef PERFORMANCE 
+  elapsed_time("Forward request and file to  public", &time1); 
+#endif 
+ 
        DPRINT(DEBUG_INFO, "Sent file %ld over %lu \n", transfered, size); 
       
-       assert( (size_t)transfered == size); 
-        
-       DPRINT(DEBUG_INFO, "Sent file to the public variant\n"); 
-       
+     
        if(receive_syscall_result(ths->fds[PUBLIC_TRUSTED], &public_result) < 0)
           die("Receiving result"); 
-
+#ifdef PERFORMANCE 
+  elapsed_time("Public result", &time1); 
+#endif 
+/*         if(receive_syscall_result(ths->fds[PRIVATE_TRUSTED], &private_result) < 0)*/
+           /*die("Receiving result"); */
+/*#ifdef PERFORMANCE */
+  /*elapsed_time("Private result", &time1); */
+/*#endif */
+ 
         if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], &public_result) < 0)
             die("forward_syscall_result");
+#ifdef PERFORMANCE 
+  elapsed_time("Forward publice result", &time1); 
+#endif 
        
         if(forward_syscall_result(ths->fds[PRIVATE_UNTRUSTED], &private_result) < 0)
             die("forward_syscall_result");
+#ifdef PERFORMANCE 
+  elapsed_time("Forward private result", &time1); 
+#endif 
        
     } else 
           irreversible_error("Not Implemented yet"); 

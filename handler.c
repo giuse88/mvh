@@ -1222,20 +1222,8 @@ u64_t untrusted_writev(const ucontext_t * uc) {
    
    transfered = sendmsg(fd, &msg, 0);
   
-    if( transfered < 0)
+   if( transfered < 0)
        die("Error sending registers");
-
-  /* assert((size_t)sent ==  (SIZE_HEADER) + size);*/
-   
-   /*if (send_syscall_header_with_extra(uc, extra, buf,size)< 0)*/
-      /*die("Send syscall header"); */
- 
-   /*DPRINT(DEBUG_INFO, "--- Sent iovec structures %ld\n", size); */
-      /*// send data via wrivev*/
-      /*if ( (transfered = writev(fd, iov, iovec_num)) < 0 )*/
-      /*die("WRITEV untrusted"); */
-
-   /*DPRINT(DEBUG_INFO, "--- Writev sent %ld\n", transfered); */
 
    if(receive_syscall_result(&result) < 0 )
        die("Failede get_syscall_result"); 
@@ -1251,7 +1239,9 @@ void  trusted_sendfile_priv   ( int fd, const struct syscall_header * header) {
   struct syscall_result result; 
   ssize_t transfered =-1; 
   int source_fd =-1; 
-
+  size_t size = header->regs.arg3; 
+  char * buf= malloc(size); 
+ 
   CLEAN_RES(&result); 
 
   TRUSTED_START("SENDFILE"); 
@@ -1261,17 +1251,20 @@ void  trusted_sendfile_priv   ( int fd, const struct syscall_header * header) {
   source_fd = header->regs.arg1; 
   DPRINT(DEBUG_INFO, ">>> The source fd id %d\n", source_fd);
   
-  if ((transfered =sendfile(fd, source_fd, (off_t *)header->regs.arg2,header->regs.arg3)) < 0)
+  if ((transfered =read(source_fd, buf, size)) < 0)
       die("sendfile");
-
   assert( (size_t)transfered == header->regs.arg3); 
-  
-  result.extra = transfered; 
+  DPRINT(DEBUG_INFO, ">>> source file read correclty\n");
+
   result.extra = transfered; 
   result.cookie = header->cookie; 
- 
-  send_syscall_result(fd, &result); 
 
+
+  transfered = send_result_with_extra(fd, &result, buf, size); 
+
+  assert(transfered == SIZE_RESULT + size); 
+
+  free(buf); 
   TRUSTED_END("SENDFILE"); 
 
   return; 
