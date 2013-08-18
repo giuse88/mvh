@@ -106,8 +106,9 @@ int pad_request( unsigned long arg0,
 
    ucontext_t uc; 
    u64_t result; 
+#ifdef DEBUG
    pid_t tid= (pid_t)get_local_tid(); 
-
+#endif
    memset((void*)&uc, 0, sizeof(uc)); 
    
    uc.uc_mcontext.gregs[REG_SYSCALL] = sysnum; 

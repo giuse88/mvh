@@ -1262,7 +1262,7 @@ void  trusted_sendfile_priv   ( int fd, const struct syscall_header * header) {
 
   transfered = send_result_with_extra(fd, &result, buf, size); 
 
-  assert(transfered == SIZE_RESULT + size); 
+  assert((size_t)transfered == SIZE_RESULT + size); 
 
   free(buf); 
   TRUSTED_END("SENDFILE"); 

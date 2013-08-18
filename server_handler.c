@@ -16,6 +16,7 @@
 #include <termios.h> 
 #include <sys/ioctl.h>
 #include <sys/epoll.h>
+#include <sys/time.h>
 
 #define DEFAULT_SERVER_HANDLER server_default
 struct server_handler * syscall_table_server_; 

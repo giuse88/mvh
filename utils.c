@@ -194,7 +194,7 @@ ssize_t forward_syscall_request_with_extra(int fd,  const struct syscall_header 
     
     // set header 
     
-    io[0].iov_base = header; 
+    io[0].iov_base = (struct syscall_header*)header; 
     io[0].iov_len = SIZE_HEADER; 
 
     io[1].iov_base= buf;

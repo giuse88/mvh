@@ -23,8 +23,9 @@ void emulator(int nr, siginfo_t  *info, void *void_context)
 {
   ucontext_t *ctx = (ucontext_t *)(void_context);
   u64_t syscallNum; 
+#ifdef DEBUG
   pid_t tid= (pid_t)get_local_tid(); 
-  
+#endif
   if (info->si_code != SYS_SECCOMP)
     return;
   
@@ -41,6 +42,7 @@ void emulator(int nr, siginfo_t  *info, void *void_context)
   DPRINT(DEBUG_INFO, "== [%d] End emulation of %s\n\n", tid,syscall_names[syscallNum]);
   return;
 }
+
 int install_filter(int fd){
   struct sock_filter f[] = 
   {
