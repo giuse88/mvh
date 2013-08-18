@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <arpa/inet.h> 
 #include <sys/syscall.h>
+#include <sys/time.h>
 #include <sys/sendfile.h>
 #include <sys/epoll.h>
 #include <assert.h> 
@@ -193,6 +194,7 @@ void trusted_default (int fd, const struct syscall_header *header){
 
   struct syscall_result result; 
   struct syscall_request request;
+  //static bool patched_default=false; 
 
   memset(&result, 0, sizeof(result)); 
   memset(&request, 0, sizeof(request)); 
@@ -209,6 +211,12 @@ void trusted_default (int fd, const struct syscall_header *header){
 
   send_syscall_result(fd, &result); 
 
+/* if (!patched_default) {*/
+    /*patch_syscall_instruction((char *)header->address); */
+   /*patched_default =true; */
+  /*}*/
+
+
   DPRINT(DEBUG_INFO, ">>> DEFAULT trusted thread for system call <%s> END \n",
             syscall_names[header->syscall_num]);
  
@@ -221,11 +229,10 @@ void elapsed_time(struct timeval * time1 ) {
 
   double elapsedTime =0; 
   struct timeval time2; 
-  
   gettimeofday(&time2, NULL);
   elapsedTime = (time2.tv_sec - time1->tv_sec) * 1000.0;      // sec to ms
   elapsedTime += (time2.tv_usec - time1->tv_usec) / 1000.0;   // us to ms
-  DPRINT(DEBUG_INFO, "Untrusted elapsed ms\n"); 
+  DPRINT(DEBUG_INFO, "Untrusted elapsed  %f  ms\n", elapsedTime); 
 }
 
 
@@ -283,11 +290,6 @@ u64_t untrusted_open(const ucontext_t * uc ){
    char * path = (char *)uc->uc_mcontext.gregs[REG_ARG0]; 
    u64_t extra =0;  
 
-#ifdef PERFORMANCE 
-  struct timeval time; 
-  gettimeofday(&time, NULL);    
-#endif 
-
    UNTRUSTED_START("OPEN"); 
    CLEAN_RES(&result); 
 
@@ -305,10 +307,6 @@ u64_t untrusted_open(const ucontext_t * uc ){
 
   UNTRUSTED_END("OPEN"); 
 
-#ifdef PERFORMANCE 
-  elapsed_time(&time); 
-#endif 
-
   return (u64_t)result.result; 
 }
 
@@ -318,13 +316,6 @@ void trusted_open (int fd, const struct syscall_header *header){
   struct syscall_request request;
   static bool patched =false; 
   char *start =NULL, *end =NULL; 
-
-#ifdef PERFORMANCE 
-  struct timeval time1, time2;
-  double elapsedTime;
-  gettimeofday(&time1, NULL);    
-#endif 
-
 
   memset(&result, 0, sizeof(result)); 
   memset(&request, 0, sizeof(request)); 
@@ -346,14 +337,6 @@ void trusted_open (int fd, const struct syscall_header *header){
   result.cookie = header->cookie; 
   result.extra = 0; 
   send_syscall_result(fd, &result); 
-
-#ifdef PERFORMANCE 
-  gettimeofday(&time2, NULL);
-  elapsedTime = (time2.tv_sec - time1.tv_sec) * 1000.0;      // sec to ms
-  elapsedTime += (time2.tv_usec - time1.tv_usec) / 1000.0;   // us to ms
-//  DPRINT(DEBUG_INFO, " Trusted time Elapsed : %lf ms\n", elapsedTime); 
-#endif 
-
 
   TRUSTED_END("OPEN"); 
 }
@@ -687,6 +670,7 @@ u64_t untrusted_read(const ucontext_t * uc ){
 
   return (u64_t)res.result; 
 }
+
 void  trusted_read  ( int fd, const struct syscall_header * header) {
 
   struct syscall_result result; 
@@ -884,11 +868,8 @@ u64_t untrusted_stat_priv(const ucontext_t * uc ){
  
   DPRINT(DEBUG_INFO, "Path %s, Path length %lu\n", path, path_length); 
 
-  if (send_syscall_header(uc, extra)< 0)
+  if (send_syscall_header_with_extra(uc, extra, path, path_length)< 0)
        die("Send syscall header"); 
-
-  if (send_extra(get_local_fd(), path,path_length) < 0) 
-       die("Failed send extra (STAT)"); 
   
   if(receive_syscall_result(&res) < 0 )
        die("Failede get_syscall_result"); 
@@ -917,11 +898,8 @@ u64_t untrusted_stat_pub(const ucontext_t * uc ){
   
   DPRINT(DEBUG_INFO, "Path %s, Path length %lu\n", path, path_length); 
   
-  if (send_syscall_header(uc, extra)< 0)
+  if (send_syscall_header_with_extra(uc, extra, path, path_length)< 0)
        die("Send syscall header"); 
-
-  if (send_extra(get_local_fd(), path, path_length) < 0) 
-       die("Failed send extra (STAT)"); 
 
   transfered= receive_result_with_extra(fd, &res, (char *)stat_info, sizeof ( struct stat) ); 
   if ( transfered < 0) 
