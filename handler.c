@@ -1041,7 +1041,7 @@ u64_t untrusted_epoll_wait(const ucontext_t * uc ){
    if (send_syscall_header(uc, extra)< 0)
       die("Send syscall header"); 
   
-   transfered= receive_result_with_extra_no_check(fd, &res, buf, size); 
+   transfered= receive_result_with_extra(fd, &res, buf, size); 
    if ( transfered < 0) 
       die("Recvmsg failed result stat"); 
 
