@@ -278,7 +278,8 @@ void trusted_exit_group( int fd, const struct syscall_header *header) {
   close(fd); 
 
   DPRINT(DEBUG_INFO, ">>> Trusted handler for < exit_group > terminated\n");
-  syscall(SYS_exit_group, 0); 
+ // syscall(SYS_exit_group, 0);
+ exit(0); 
 }
 /*EXIT*/
 

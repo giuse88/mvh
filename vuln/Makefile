@@ -15,7 +15,7 @@ exploit : exploit.c mvh_exploit.c
 gdb: 
 	 sudo gdb -q --pid=`pidof tinyweb_vuln` --symbols=./tinyweb_vuln
 
-shellcode : 
+shellcode :    shellcode.c  
 	gcc $(OPT)  -o shellcode shellcode.c
 	gcc $(OPT)  -o remote_shellcode remote_shellcode.c
 

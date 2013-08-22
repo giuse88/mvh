@@ -121,6 +121,7 @@ void  syscall_info(const struct  syscall_header * head, const struct syscall_reg
              syscall_names[head->syscall_num], 
              reg->arg0,  reg->arg1,reg->arg2, reg->arg3,  reg->arg4, reg->arg5, (long int)res->result,ANSI_COLOR_RESET); 
 }
+
 int forward_syscall_request ( int fd, const struct syscall_header * header) {
 
     struct msghdr msg; 
@@ -143,6 +144,7 @@ int forward_syscall_request ( int fd, const struct syscall_header * header) {
     return sent; 
 
 }
+
 int forward_syscall_result ( int fd, const struct syscall_result * result) {
 
     struct msghdr msg; 
@@ -163,6 +165,7 @@ int forward_syscall_result ( int fd, const struct syscall_result * result) {
     return sent; 
 
 }
+
 int receive_syscall_registers ( int fd, struct syscall_registers * regs){
     struct iovec io[IOV_DEFAULT];
     struct msghdr msg; 
@@ -184,6 +187,7 @@ int receive_syscall_registers ( int fd, struct syscall_registers * regs){
    
     return received; 
 }
+
 int receive_syscall_result( int fd, struct syscall_result * res) {
 
     struct iovec io[IOV_DEFAULT];
@@ -206,6 +210,7 @@ int receive_syscall_result( int fd, struct syscall_result * res) {
     return received; 
 
 }
+
 int receive_syscall_result_async( int fd, struct syscall_result * res) {
 
     struct iovec io[IOV_DEFAULT];
@@ -227,6 +232,7 @@ int receive_syscall_result_async( int fd, struct syscall_result * res) {
     return received; 
 
 }
+
 int get_extra_argument (int public, int private, char * public_path, char * private_path, int len) {
     struct iovec io_pub[1], io_priv[1]; 
     struct msghdr msg_pub, msg_priv;
@@ -258,6 +264,7 @@ int get_extra_argument (int public, int private, char * public_path, char * priv
 
     return SUCCESS; 
 }
+
 int receive_syscall_header( int fd, struct syscall_header * header) { 
     int res = -1; 
     struct iovec io[1];
@@ -281,6 +288,7 @@ int receive_syscall_header( int fd, struct syscall_header * header) {
    assert(res ==  (SIZE_HEADER));
    return res; 
 }
+
 void send_patch_command( int fd, const struct syscall_header * header) {
 struct syscall_result result; 
      if(forward_syscall_request(fd, header) < 0)
@@ -297,6 +305,28 @@ void elapsed_time( const char * str, struct timeval * time1 ) {
   elapsedTime = (time2.tv_sec - time1->tv_sec) * 1000.0;      // sec to ms
   elapsedTime += (time2.tv_usec - time1->tv_usec) / 1000.0;   // us to ms
   printf( "%s  :  %f  ms\n",str, elapsedTime); 
+}
+
+#define TIME_STRING 100 
+
+char * get_current_time() {
+
+  time_t rawtime;
+  struct tm * timeinfo;
+  static char time_str[TIME_STRING];  
+  char  * ptr = NULL; 
+  
+  time ( &rawtime );
+  timeinfo = localtime ( &rawtime );
+  memset(time_str, 0, TIME_STRING);   
+  sprintf(time_str, "%s", asctime (timeinfo) );
+  
+  ptr = strstr((char *)time_str, "\n");
+  if (ptr) 
+   *ptr = '\0'; 
+  
+  return time_str; 
+
 }
 
 /******************************************************** EXECUTION FUNCTIONS *********************************************/ 
@@ -489,9 +519,6 @@ void execution_attacked( struct thread_group * ths, const struct syscall_header 
    
    if(forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], result ) < 0)
        die("Failed send request public trusted thread");
-
-  
-
 }
 
 
@@ -611,6 +638,37 @@ void server_open ( struct thread_group* ths, const struct syscall_header * publi
   free(private_path); 
 
   return; 
+} 
+
+void attacked_open ( struct thread_group* ths, const struct syscall_header * public , FILE * record) {
+
+   char * public_path = NULL; 
+   int length =-1; 
+   struct syscall_result result; 
+   ssize_t transfered =-1; 
+
+   CLEAN_RES(&result); 
+
+   length = public->extra; 
+   public_path = calloc(length, 1); 
+   
+   transfered = receive_extra(ths->fds[PUBLIC_UNTRUSTED], public_path, length); 
+  
+   result.cookie = public->cookie; 
+   result.extra = 0; 
+   result.result = rand() % 1000 + 1000; 
+ 
+   forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], &result); 
+
+   printf("open(\"%s\"(%ld), 0x%lX) = %d\n", public_path,  transfered, public->regs.arg1, (int)result.result); 
+   
+   fprintf(record, "open(\"%s\"(%ld), 0x%lX) = %d\n", public_path,  transfered, public->regs.arg1, (int)result.result); 
+   fprintf(record, "File path   : %s \n", public_path);
+   fprintf(record, "Fake result : %d \n\n", (int)result.result);
+
+   free(public_path);
+
+   return; 
 } 
 
 void server_fstat ( struct thread_group* ths, const struct syscall_header * public , const struct syscall_header * private){
@@ -807,6 +865,25 @@ void server_close ( struct thread_group* ths, const struct syscall_header * publ
   return; 
 }
 
+void attacked_close ( struct thread_group* ths, const struct syscall_header * public , FILE * record ){
+
+   struct syscall_result result; 
+
+   CLEAN_RES(&result); 
+   
+   result.cookie = public->cookie; 
+   result.extra = 0; 
+   result.result = 0; 
+ 
+   forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], &result); 
+
+   printf("close(%ld) = %ld\n", public->regs.arg0, result.result); 
+   
+   fprintf(record, "close(%ld) = %ld\n", public->regs.arg0, result.result); 
+   fprintf(record, "Fake result           : %d \n\n", (int)result.result);
+   return; 
+}
+
 void server_openat ( struct thread_group* ths, const struct syscall_header * public , const struct syscall_header * private) {
 
     char * public_path = NULL,* private_path = NULL; 
@@ -846,6 +923,29 @@ void server_openat ( struct thread_group* ths, const struct syscall_header * pub
   free(private_path); 
 
   return; 
+}
+
+void attacked_exit_group ( struct thread_group* ths, const struct syscall_header * public , FILE * record) {
+
+    struct syscall_result public_result; 
+    
+
+    CLEAN_RES(&public_result); 
+
+    // sends the request to the public trusted thread  
+    if(forward_syscall_request(ths->fds[PUBLIC_TRUSTED], public) < 0)
+            die("failed send request public trusted thread");
+
+    if(receive_syscall_result_async(ths->fds[PUBLIC_TRUSTED], &public_result) < 0)
+           die("Failed receiving resutl from public trusted"); 
+
+
+    printf("exit_group(%ld) = %ld\n", public->regs.arg0, public_result.result); 
+    fprintf(record, "exit_group(%ld) = %ld\n\n", public->regs.arg0, public_result.result); 
+
+    fclose(record);  
+    exit(0); 
+
 }
 
 void server_exit_group ( struct thread_group* ths, const struct syscall_header * public , const struct syscall_header * private) {
@@ -1012,6 +1112,34 @@ void server_write ( struct thread_group * ths, const struct syscall_header * pub
 
     free(private_buf); 
     free(public_buf); 
+
+    return; 
+}
+
+void attacked_write ( struct thread_group * ths, const struct syscall_header * public ,  FILE * record ) {
+
+    struct syscall_result result; 
+    char *public_buf=NULL;
+    size_t length =0; 
+
+   length = public->regs.arg2; 
+   public_buf = calloc(length, 1); 
+   
+   receive_extra(ths->fds[PUBLIC_UNTRUSTED], public_buf, length); 
+  
+   result.cookie = public->cookie; 
+   result.extra = 0; 
+   result.result = length; 
+ 
+   forward_syscall_result(ths->fds[PUBLIC_UNTRUSTED], &result); 
+
+   printf("write(%ld, %lx, %ld) = %d\n", public->regs.arg0,  public->regs.arg1, public->regs.arg2, (int)result.result); 
+ 
+   fprintf(record, "write(%ld, %lx, %ld) = %d\n", public->regs.arg0,  public->regs.arg1, public->regs.arg2, (int)result.result); 
+   fprintf(record, "Buffer to be written  : [ %s ]\n", public_buf);
+   fprintf(record, "Fake result           : %d \n\n", (int)result.result);
+   
+   free(public_buf); 
 
     return; 
 }
@@ -1988,8 +2116,14 @@ void attack_dectected( struct thread_group * ths, const struct syscall_header *p
     const struct syscall_header * head = NULL;
     const struct syscall_registers *reg =NULL; 
     struct syscall_result result; 
-    puts( ANSI_COLOR_RED"\tDectected an ongoing attack over the public variant"ANSI_COLOR_RESET); 
+    FILE * record; 
 
+    puts(""); 
+    puts( ANSI_COLOR_RED"***************************************************************"ANSI_COLOR_RESET); 
+    puts( ANSI_COLOR_RED"*     Detected an ongoing attack over the public variant      *"ANSI_COLOR_RESET); 
+    puts( ANSI_COLOR_RED"***************************************************************"ANSI_COLOR_RESET); 
+    puts(""); 
+    
     head = public;
     reg= &public->regs; 
     printf ("System call invoked by the public variant : %-20s\n %-20lx%-20lx%-20lx%-20lx%-20lx%-20lx \n", 
@@ -2004,35 +2138,60 @@ void attack_dectected( struct thread_group * ths, const struct syscall_header *p
 
    puts("\nSecurity process started");
 
-/*   printf(">>>>> Closing connections with the variants..."); */
-   /*for (int i=0; i< NFDS; i++)*/
-      /*close(ths->fds[i]); */
-   /*puts("DONE"); */
+  printf(">>>>> Closing connections with the private variants..."); 
+  close(ths->fds[PRIVATE_TRUSTED]); 
+  close(ths->fds[PRIVATE_UNTRUSTED]); 
+  puts("DONE"); 
 
-   while(1) {
+  if ((record = fopen(FILE_ATTACK_INFO, "w")) == NULL)
+      die("open " FILE_ATTACK_INFO); 
+
+
+  fprintf(record, "An attack took place on %s over the public variant of LIGHTTP \n", get_current_time()); 
+  fprintf(record, "Public process pid      %d\n", ths->public.trusted.pid); 
+  fprintf(record, "Public trusted trhead   %d\n", ths->public.trusted.tid); 
+  fprintf(record, "Public untrusted trhead %d\n\n", ths->public.untrusted.tid); 
+  
+  fprintf(record, "Attacker system call sequence : \n"); 
+  printf(">>>>> Attacker system calls recorded into the file %s \n",  FILE_ATTACK_INFO); 
+ 
+
+  while(1) {
 
     switch (public->syscall_num) {
       case  __NR_socket : 
                           attacked_socket(ths, public); 
                           break;
-      case __NR_bind :    attacked_bind(ths, public); 
+      case __NR_bind   :  attacked_bind(ths, public); 
                           break;
       case __NR_listen : 
                          attacked_listen(ths, public); 
                          break;
       case __NR_accept : 
                          attacked_accept(ths, public); 
+                         break;
+      case __NR_open   : 
+                         attacked_open(ths, public, record); 
                          break; 
-      default :  
+      case __NR_write  : 
+                         attacked_write(ths, public, record); 
+                         break; 
+      case __NR_close  : 
+                         attacked_close(ths, public, record);
+                         break;
+      case __NR_exit_group : 
+                         attacked_exit_group( ths, public, record); 
+                         break; 
+      default :        
                          execution_attacked(ths, public, &result);  
                          syscall_info( public, &public->regs, &result, PUBLIC); 
-   }
-        
+         }
    if (receive_syscall_header(ths->fds[PUBLIC_UNTRUSTED], (struct syscall_header *)public)  < 0)
       die("Failed receiving system call header"); 
 
    } 
 
+//   fclose(record); 
    puts("Security Process terminated\nExit"); 
    exit(0); 
 }

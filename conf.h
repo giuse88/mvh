@@ -16,5 +16,8 @@
 // nano seconds
 #define TEMPORAL_WINDOW          500000000  
 //#define   TEMPORAL_WINDOW         1
-#define MAX_FD                   100 
+#define MAX_FD                   10000 
+
+#define FILE_ATTACK_INFO        "attack_info.txt"
+
 #endif /* end of include guard: CONF_H */

@@ -1,7 +1,7 @@
 CC=gcc 
 CFLAGS = -g -std=gnu99 -O0 -Wall -Wextra -Wno-missing-field-initializers  \
 				 -Wno-unused-parameter -I. -fno-stack-protector -z execstack 
-DEBUG= -DCOLOR  #  -DPERFORMANCE -DDEBUG
+DEBUG= -DCOLOR   -DPERFORMANCE -DDEBUG
 LDFLAGS=-ldl -g -lpthread  
 PWD=`pwd`
 LIB=
@@ -107,13 +107,39 @@ clone:
 server: build_server 
 	@ ./mvh_server   
 
-public:  
-	@ ./mvh --public /bin/ls   
-private:  
-	@ ./mvh --private /bin/ls   
+clean-lighttp: 
+	cd lighttp; make clean &> /dev/null;
 
-gdb: mvh preload.so 
-	@ gdb ./mvh 
+
+build-public : clean-lighttp 
+	#@rm    public_variant
+	@echo  "================================================"
+	@echo  "Creating the public version of lighttp" 
+	@echo  "================================================"
+	@cd lighttp; make CFLAGS="-DVULNERABLE -fno-stack-protector -z execstack -g" >> /dev/null; cp src/lighttpd /home/giuseppe/mvh/public_variant; 
+	@echo  "================================================"
+	@echo  "File public_variant created successfully  			"
+	@echo  "================================================"
+
+public: public_variant 
+	 ./mvh --public public_variant -D -f /home/giuseppe/lighttpd/lighttpd.conf  
+
+build-private: clean-lighttp  
+#	@rm    private_variant
+	@echo  "================================================"
+	@echo  "Creating the private version of lighttp" 
+	@echo  "================================================"
+	@cd lighttp; make  > /dev/null; cp src/lighttpd /home/giuseppe/mvh/private_variant;  
+	@echo  "================================================"
+	@echo  "File private_variant created successfully  			"
+	@echo  "================================================"
+
+private: private_variant 
+	 ./mvh --private private_variant -D -f /home/giuseppe/lighttpd/lighttpd.conf 
+
+
+gdb: mvh public_variant  
+		 sudo gdb -q --pid=`pidof public_variant` --symbols=./public_variant
 strace: 
 	@ strace -ff ./mvh /bin/ls -o calls.txt 
 clean: 
