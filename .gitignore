@@ -35,3 +35,10 @@ tinyweb_vuln
 #Folders
 result/*
 test/*
+lighttp/*
+private_variant
+public_variant
+vuln/exec.c
+vuln/exit.s
+vuln/hello_word
+vuln/hello_word.s

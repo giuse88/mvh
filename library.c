@@ -274,7 +274,7 @@ void patch_syscalls_in_func(char *start, char *end) {
 
   int i = 0;
 
-  DPRINT(DEBUG_INFO, "Withing patch function, start %p - end %p\n", start, end); 
+//  DPRINT(DEBUG_INFO, "Withing patch function, start %p - end %p\n", start, end); 
 
   for (char *ptr = start; ptr < end;) {
   
@@ -322,7 +322,7 @@ void patch_syscalls_in_func(char *start, char *end) {
          of course, move these instructions somewhere else.
       */ 
 
-      DPRINT(DEBUG_INFO, "Found system call instruction at : 0x%p\n", code[i].addr); 
+      //fprintf(stderr,"Found system call instruction at : 0x%p\n", code[i].addr); 
  
 
       int startInd = i; // current instruction 
@@ -385,7 +385,7 @@ find_end:
       int first = i;
   
 
-      DPRINT(DEBUG_INFO, " To patch this instructionmI need %d additional bytes\n", needed); 
+      /*fprintf(stdout,  "%d additional bytes are required\n", needed); */
  
       while (needed > 0 && first != startInd) {
         first = (first + (sizeof(code) / sizeof(struct code)) - 1) %
@@ -401,8 +401,8 @@ find_end:
       int postamble = code[second].addr + code[second].len -
                       code[i].addr - code[i].len;
 
-      DPRINT(DEBUG_INFO, " Preamble   %d bytes\n", preamble); 
-      DPRINT(DEBUG_INFO, " Postamble  %d bytes\n", postamble); 
+      /*fprintf(stdout, " Preamble   %d bytes\n", preamble); */
+      /*fprintf(stdout, " Postamble  %d bytes\n", postamble); */
   
 
 //       The following is all the code that construct the various bits of
@@ -426,7 +426,7 @@ find_end:
       
       char* dest = alloc_scratch_space(code[first].addr, needed);
       
-      DPRINT(DEBUG_INFO, "%d bytes has been allocated at %p\n",needed, dest); 
+      /*fprintf(stdout, "%d bytes has been allocated at %p\n",needed, dest); */
     
 
       memset(dest, 0, needed); 
@@ -511,7 +511,7 @@ find_end:
 #endif
        code[i].addr + code[i].len, postamble);
 
-      DPRINT(DEBUG_ALL, "I used %d\n", preamble + postamble + 47); 
+     // DPRINT(DEBUG_ALL, "I used %d\n", preamble + postamble + 47); 
 
     // note is_indirect_call always false  
 #if defined(__x86_64__)

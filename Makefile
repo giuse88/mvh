@@ -1,7 +1,7 @@
 CC=gcc 
 CFLAGS = -g -std=gnu99 -O0 -Wall -Wextra -Wno-missing-field-initializers  \
 				 -Wno-unused-parameter -I. -fno-stack-protector -z execstack 
-DEBUG= -DCOLOR   -DPERFORMANCE -DDEBUG
+DEBUG= -DCOLOR  # -DPERFORMANCE -DDEBUG
 LDFLAGS=-ldl -g -lpthread  
 PWD=`pwd`
 LIB=
@@ -10,7 +10,7 @@ LINKER=gcc
 all : mvh build_server 
 
 build_server: main_mvh_server.c mvh_server.c error.c
-	${CC} -g  ${DEBUG}  ${CFLAGS} -lpthread utils.c main_mvh_server.c server_handler.c mvh_server.c error.c -o mvh_server 
+	${CC} -g  ${DEBUG}  -g -std=gnu99  -lpthread utils.c main_mvh_server.c server_handler.c mvh_server.c error.c -o mvh_server 
 
 mvh : main.o mvh.o error.o preload.so  
 	${LINKER}  main.o mvh.o error.o -o mvh 	-fno-stack-protector -z execstack 
